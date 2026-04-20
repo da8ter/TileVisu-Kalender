@@ -1,0 +1,85 @@
+{
+    "elements": [
+        {
+            "type": "SelectInstance",
+            "name": "CalendarID",
+            "caption": "Calendar instance"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "DaysAhead",
+            "caption": "Days ahead (incl. today)",
+            "minimum": 1,
+            "maximum": 60,
+            "suffix": " d"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "UpdateInterval",
+            "caption": "Update interval",
+            "minimum": 1,
+            "maximum": 1440,
+            "suffix": " min"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "MaxEvents",
+            "caption": "Maximum events (0 = unlimited)",
+            "minimum": 0,
+            "maximum": 500
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowLocation",
+            "caption": "Show location"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowDescriptionPopup",
+            "caption": "Show details popup on click"
+        },
+        {
+            "type": "CheckBox",
+            "name": "HighlightRunning",
+            "caption": "Highlight running events"
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Donate",
+            "expanded": false,
+            "items": [
+                {
+                    "type": "Label",
+                    "caption": "If you like this module and want to support future development, a small donation is very welcome. Thank you!"
+                },
+                {
+                    "type": "Label",
+                    "caption": "PayPal: https://paypal.me/StephanSprick"
+                },
+                {
+                    "type": "Label",
+                    "caption": "GitHub Sponsors: https://github.com/sponsors/"
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "caption": "Update now",
+            "onClick": "TVKAL_Update($id);"
+        }
+    ],
+    "status": [
+        {
+            "code": 201,
+            "icon": "inactive",
+            "caption": "No calendar instance selected"
+        },
+        {
+            "code": 202,
+            "icon": "error",
+            "caption": "Selected instance does not provide a supported calendar function"
+        }
+    ]
+}

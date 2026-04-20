@@ -1,0 +1,637 @@
+<style>
+    .tvkal {
+        --bg: var(--card-color);
+        --card: var(--card-color);
+        --text: var(--content-color);
+        --muted: color-mix(in srgb, var(--content-color) 50%, transparent);
+        --border: color-mix(in srgb, var(--accent-color) 30%, transparent);
+        --accent: var(--accent-color);
+        --radius: 14px;
+        --gap: 12px;
+        --nav-h: 44px;
+
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        color: var(--text);
+        background: transparent;
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+    }
+    .tvkal *,
+    .tvkal *::before,
+    .tvkal *::after { box-sizing: border-box; }
+
+    .tvkal__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: var(--gap);
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--gap) / 2);
+        overflow: hidden;
+    }
+
+    .tvkal__view { display: none; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+    .tvkal__view.active { display: flex; }
+
+    /* ── Listen-Ansicht ──────────────────────────────────────────────── */
+    .tvkal__list {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--gap) / 2);
+        overflow: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent;
+    }
+    .tvkal__list::-webkit-scrollbar { width: 6px; height: 6px; }
+    .tvkal__list::-webkit-scrollbar-track { background: transparent; }
+    .tvkal__list::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--accent) 70%, transparent);
+        border-radius: 999px;
+    }
+
+    .tvkal__section-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--bg);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        padding: 8px 4px 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+    }
+    .tvkal__section-header .date {
+        font-weight: 500;
+        letter-spacing: normal;
+        text-transform: none;
+    }
+
+    .tvkal__item {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: var(--gap);
+        padding: calc(var(--gap) * 0.6) var(--gap);
+        border-radius: var(--radius);
+        background: var(--card);
+        border: 1px solid var(--border);
+    }
+    .tvkal__item--clickable { cursor: pointer; transition: border-color .12s ease, transform .04s ease; }
+    .tvkal__item--clickable:hover { border-color: var(--accent); }
+    .tvkal__item--clickable:active { transform: scale(.99); }
+
+    .tvkal__item--running {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 20%, var(--bg));
+    }
+
+    .tvkal__time {
+        flex: 0 0 auto;
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+        min-width: 84px;
+    }
+    .tvkal__item--running .tvkal__time { color: var(--text); }
+
+    .tvkal__content {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .tvkal__title {
+        font-weight: 700;
+        font-size: 13px;
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .tvkal__info {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tvkal__meta {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+    .tvkal__badge {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--accent);
+        color: var(--text);
+        background: color-mix(in srgb, var(--accent) 20%, var(--bg));
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .tvkal__empty {
+        color: var(--muted);
+        padding: 10px;
+        text-align: center;
+        font-style: italic;
+    }
+
+    /* ── Monats-Ansicht ──────────────────────────────────────────────── */
+    .tvkal__month {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .tvkal__month-header {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-align: center;
+        padding: 4px 0;
+        letter-spacing: 0.3px;
+    }
+    .tvkal__month-grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+        align-content: start;
+    }
+    .tvkal__month-weekday {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        text-align: center;
+        padding: 4px 0 2px;
+    }
+    .tvkal__month-day {
+        aspect-ratio: 1 / 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 500;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        color: var(--text);
+        background: transparent;
+        user-select: none;
+    }
+    .tvkal__month-day--other { color: var(--muted); opacity: 0.35; }
+    .tvkal__month-day--today {
+        border-color: var(--accent);
+        font-weight: 700;
+    }
+    .tvkal__month-day--has-events {
+        background: color-mix(in srgb, var(--accent) 25%, var(--bg));
+        border-color: var(--accent);
+        color: var(--text);
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform .08s ease;
+    }
+    .tvkal__month-day--has-events:hover { transform: scale(1.05); }
+    .tvkal__month-day--today.tvkal__month-day--has-events {
+        background: var(--accent);
+    }
+
+    /* ── Bottom-Nav ──────────────────────────────────────────────────── */
+    .tvkal__nav {
+        flex-shrink: 0;
+        height: var(--nav-h);
+        display: flex;
+        background: var(--bg);
+        border-top: 1px solid var(--border);
+        position: relative;
+        z-index: 10;
+    }
+    .tvkal__nav-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 0;
+        font: inherit;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition: color .15s;
+    }
+    .tvkal__nav-tab svg { width: 24px; height: 24px; fill: currentColor; }
+    .tvkal__nav-tab.active { color: var(--accent); }
+    .tvkal__nav-tab:active { opacity: .7; }
+
+    /* ── Overlay (Detail & Tages-Termine) ────────────────────────────── */
+    .tvkal__overlay {
+        position: absolute;
+        inset: 0;
+        padding: 0;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 1000;
+        background: var(--bg);
+    }
+    .tvkal__overlay.open { display: flex; }
+    .tvkal__overlay-card {
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+    .tvkal__overlay-body {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        padding: var(--gap);
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent;
+    }
+    .tvkal__overlay-body::-webkit-scrollbar { width: 6px; height: 6px; }
+    .tvkal__overlay-body::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--accent) 70%, transparent);
+        border-radius: 999px;
+    }
+    .tvkal__dialog-title {
+        font-weight: 700;
+        font-size: 16px;
+        overflow-wrap: anywhere;
+    }
+    .tvkal__dialog-when {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: -4px;
+    }
+    .tvkal__field-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+    }
+    .tvkal__field-value {
+        font-size: 13px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+    .tvkal__overlay-actions {
+        display: flex;
+        gap: 8px;
+        background: var(--card);
+        padding: 10px var(--gap) var(--gap);
+        border-top: 1px solid var(--border);
+        flex: 0 0 auto;
+    }
+    .tvkal__overlay-actions button {
+        flex: 1;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+        transition: transform .04s ease, border-color .12s ease;
+    }
+    .tvkal__overlay-actions button:hover { border-color: var(--accent); }
+    .tvkal__overlay-actions button:active { transform: scale(.98); }
+    .tvkal__overlay-actions button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+    }
+</style>
+<div class="tvkal" id="tvkal-root">
+    <div class="tvkal__body">
+        <div class="tvkal__view active" id="tvkal-view-list">
+            <div class="tvkal__list" id="tvkal-list"></div>
+        </div>
+        <div class="tvkal__view" id="tvkal-view-month">
+            <div class="tvkal__month">
+                <div class="tvkal__month-header" id="tvkal-month-header"></div>
+                <div class="tvkal__month-grid" id="tvkal-month-grid"></div>
+            </div>
+        </div>
+    </div>
+    <div class="tvkal__nav">
+        <button type="button" class="tvkal__nav-tab active" id="tvkal-nav-list" aria-label="List view">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M96 144C96 117.5 117.5 96 144 96C170.5 96 192 117.5 192 144C192 170.5 170.5 192 144 192C117.5 192 96 170.5 96 144zM256 128L544 128C561.7 128 576 142.3 576 160C576 177.7 561.7 192 544 192L256 192C238.3 192 224 177.7 224 160C224 142.3 238.3 128 256 128zM256 288L544 288C561.7 288 576 302.3 576 320C576 337.7 561.7 352 544 352L256 352C238.3 352 224 337.7 224 320C224 302.3 238.3 288 256 288zM256 448L544 448C561.7 448 576 462.3 576 480C576 497.7 561.7 512 544 512L256 512C238.3 512 224 497.7 224 480C224 462.3 238.3 448 256 448zM96 320C96 293.5 117.5 272 144 272C170.5 272 192 293.5 192 320C192 346.5 170.5 368 144 368C117.5 368 96 346.5 96 320zM144 432C170.5 432 192 453.5 192 480C192 506.5 170.5 528 144 528C117.5 528 96 506.5 96 480C96 453.5 117.5 432 144 432z"/></svg>
+        </button>
+        <button type="button" class="tvkal__nav-tab" id="tvkal-nav-month" aria-label="Month view">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M224 64C241.7 64 256 78.3 256 96L256 128L384 128L384 96C384 78.3 398.3 64 416 64C433.7 64 448 78.3 448 96L448 128L480 128C515.3 128 544 156.7 544 192L544 480C544 515.3 515.3 544 480 544L160 544C124.7 544 96 515.3 96 480L96 192C96 156.7 124.7 128 160 128L192 128L192 96C192 78.3 206.3 64 224 64zM160 240L160 304L224 304L224 240L160 240zM288 240L288 304L352 304L352 240L288 240zM416 240L416 304L480 304L480 240L416 240zM160 368L160 432L224 432L224 368L160 368zM288 368L288 432L352 432L352 368L288 368zM416 368L416 432L480 432L480 368L416 368z"/></svg>
+        </button>
+    </div>
+    <div class="tvkal__overlay" id="tvkal-overlay"></div>
+</div>
+<script>
+    (function () {
+        const root        = document.getElementById('tvkal-root');
+        const listEl      = document.getElementById('tvkal-list');
+        const viewList    = document.getElementById('tvkal-view-list');
+        const viewMonth   = document.getElementById('tvkal-view-month');
+        const monthHeader = document.getElementById('tvkal-month-header');
+        const monthGrid   = document.getElementById('tvkal-month-grid');
+        const navList     = document.getElementById('tvkal-nav-list');
+        const navMonth    = document.getElementById('tvkal-nav-month');
+        const overlay     = document.getElementById('tvkal-overlay');
+
+        let currentData = null;
+        let runningInterval = null;
+        let activeView = 'list';
+
+        function escapeHtml(str) {
+            return String(str == null ? '' : str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function render(data) {
+            if (!data || typeof data !== 'object') return;
+            currentData = data;
+            renderList();
+            renderMonth();
+            startRunningTicker();
+        }
+
+        // ── List view ───────────────────────────────────────────────────
+        function renderList() {
+            const labels = currentData.labels || {};
+            const config = currentData.config || {};
+            const days = Array.isArray(currentData.days) ? currentData.days : [];
+            const totalEvents = days.reduce((n, d) => n + (d.events ? d.events.length : 0), 0);
+
+            if (totalEvents === 0) {
+                listEl.innerHTML = '<div class="tvkal__empty">' + escapeHtml(labels.noEvents || 'No events') + '</div>';
+                return;
+            }
+            listEl.innerHTML = days.map(day => renderDay(day, labels, config)).join('');
+            attachItemHandlers(config);
+        }
+
+        function renderDay(day, labels, config) {
+            const events = day.events || [];
+            if (events.length === 0) return '';
+            return (
+                '<div class="tvkal__section-header">' +
+                    '<span>' + escapeHtml(day.label) + '</span>' +
+                    '<span class="date">' + escapeHtml(day.dateShort) + '</span>' +
+                '</div>' +
+                events.map((e, idx) => renderEvent(e, idx, day, config)).join('')
+            );
+        }
+
+        function renderEvent(e, idx, day, config) {
+            const cls = ['tvkal__item'];
+            if (config.showDescriptionPopup) cls.push('tvkal__item--clickable');
+            if (config.highlightRunning && e.running) cls.push('tvkal__item--running');
+
+            const hasLocation = config.showLocation && e.location;
+            const runningBadge = (config.highlightRunning && e.running)
+                ? '<div class="tvkal__meta"><span class="tvkal__badge">live</span></div>'
+                : '';
+
+            return (
+                '<div class="' + cls.join(' ') + '" ' +
+                'data-day="' + escapeHtml(day.date) + '" ' +
+                'data-idx="' + idx + '" ' +
+                'data-from="' + e.from + '" ' +
+                'data-to="' + e.to + '">' +
+                    '<div class="tvkal__time">' + escapeHtml(e.timeLabel) + '</div>' +
+                    '<div class="tvkal__content">' +
+                        '<div class="tvkal__title">' + escapeHtml(e.title) + '</div>' +
+                        (hasLocation ? '<div class="tvkal__info">' + escapeHtml(e.location) + '</div>' : '') +
+                    '</div>' +
+                    runningBadge +
+                '</div>'
+            );
+        }
+
+        function attachItemHandlers(config) {
+            if (!config.showDescriptionPopup) return;
+            listEl.querySelectorAll('.tvkal__item--clickable').forEach(el => {
+                el.addEventListener('click', () => {
+                    const dayKey = el.getAttribute('data-day');
+                    const idx = parseInt(el.getAttribute('data-idx'), 10);
+                    const day = currentData.days.find(d => d.date === dayKey);
+                    if (!day) return;
+                    const ev = day.events[idx];
+                    if (!ev) return;
+                    openEventDialog(ev, day);
+                });
+            });
+        }
+
+        // ── Month view ──────────────────────────────────────────────────
+        function renderMonth() {
+            const labels = currentData.labels || {};
+            const info = currentData.monthInfo || {};
+            const eventDates = new Set(currentData.eventDates || []);
+            const months = labels.months || [];
+            const weekdays = labels.weekdays || [];
+            const year = info.year || new Date().getFullYear();
+            const month = info.month || (new Date().getMonth() + 1);
+            const todayIso = info.today || '';
+
+            monthHeader.textContent = (months[month - 1] || '') + ' ' + year;
+
+            // Mo-So reihenfolge (weekdays sind [So, Mo, Di, Mi, Do, Fr, Sa])
+            const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+            const weekdayHeader = weekdayOrder.map(i =>
+                '<div class="tvkal__month-weekday">' + escapeHtml(weekdays[i] || '') + '</div>'
+            ).join('');
+
+            const firstOfMonth = new Date(year, month - 1, 1);
+            // getDay(): 0=Sun ... 6=Sat → Montag-basiert mappen
+            const jsDow = firstOfMonth.getDay();
+            const offset = (jsDow + 6) % 7;
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const prevMonthDays = new Date(year, month - 1, 0).getDate();
+
+            let cells = '';
+            // Padding vorne (Tage vom Vormonat, ausgegraut)
+            for (let i = offset - 1; i >= 0; i--) {
+                const d = prevMonthDays - i;
+                cells += '<div class="tvkal__month-day tvkal__month-day--other">' + d + '</div>';
+            }
+            // Monatstage
+            for (let d = 1; d <= daysInMonth; d++) {
+                const iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+                const cls = ['tvkal__month-day'];
+                if (eventDates.has(iso)) cls.push('tvkal__month-day--has-events');
+                if (iso === todayIso) cls.push('tvkal__month-day--today');
+                cells += '<div class="' + cls.join(' ') + '" data-date="' + iso + '">' + d + '</div>';
+            }
+            // Padding hinten bis zum nächsten vollständigen Wochenende (Sonntag)
+            const totalSoFar = offset + daysInMonth;
+            const trailing = (7 - (totalSoFar % 7)) % 7;
+            for (let d = 1; d <= trailing; d++) {
+                cells += '<div class="tvkal__month-day tvkal__month-day--other">' + d + '</div>';
+            }
+
+            monthGrid.innerHTML = weekdayHeader + cells;
+
+            monthGrid.querySelectorAll('.tvkal__month-day--has-events').forEach(el => {
+                el.addEventListener('click', () => openDayDialog(el.getAttribute('data-date')));
+            });
+        }
+
+        // ── Running-Ticker ──────────────────────────────────────────────
+        function startRunningTicker() {
+            if (runningInterval) return;
+            runningInterval = setInterval(updateRunning, 30000);
+        }
+        function updateRunning() {
+            if (!currentData || !currentData.config || !currentData.config.highlightRunning) return;
+            const now = Math.floor(Date.now() / 1000);
+            listEl.querySelectorAll('.tvkal__item').forEach(el => {
+                const from = parseInt(el.getAttribute('data-from'), 10);
+                const to = parseInt(el.getAttribute('data-to'), 10);
+                const isRunning = now >= from && now < to;
+                el.classList.toggle('tvkal__item--running', isRunning);
+            });
+        }
+
+        // ── Tab-Switching ───────────────────────────────────────────────
+        function switchView(view) {
+            activeView = view;
+            viewList.classList.toggle('active', view === 'list');
+            viewMonth.classList.toggle('active', view === 'month');
+            navList.classList.toggle('active', view === 'list');
+            navMonth.classList.toggle('active', view === 'month');
+        }
+        navList.addEventListener('click', () => switchView('list'));
+        navMonth.addEventListener('click', () => switchView('month'));
+
+        // ── Overlays ────────────────────────────────────────────────────
+        function openEventDialog(ev, day) {
+            const labels = currentData.labels || {};
+            const whenText = day.label + ' · ' + day.dateShort + ' · ' + (ev.allDay ? labels.allDay : ev.timeLabel);
+
+            const rows = [];
+            if (ev.location)    rows.push({ label: labels.location,    value: ev.location });
+            if (ev.description) rows.push({ label: labels.description, value: ev.description });
+            if (ev.categories)  rows.push({ label: labels.categories,  value: ev.categories });
+
+            const rowsHtml = rows.map(r =>
+                '<div class="tvkal__field-label">' + escapeHtml(r.label) + '</div>' +
+                '<div class="tvkal__field-value">' + escapeHtml(r.value) + '</div>'
+            ).join('');
+
+            overlay.innerHTML =
+                '<div class="tvkal__overlay-card">' +
+                    '<div class="tvkal__overlay-body">' +
+                        '<div class="tvkal__dialog-title">' + escapeHtml(ev.title) + '</div>' +
+                        '<div class="tvkal__dialog-when">' + escapeHtml(whenText) + '</div>' +
+                        rowsHtml +
+                    '</div>' +
+                    '<div class="tvkal__overlay-actions">' +
+                        '<button type="button" class="primary" data-action="close">' + escapeHtml(labels.close || 'Close') + '</button>' +
+                    '</div>' +
+                '</div>';
+            overlay.classList.add('open');
+            overlay.querySelector('[data-action="close"]').addEventListener('click', closeOverlay);
+            overlay.addEventListener('click', onOverlayClick);
+            document.addEventListener('keydown', onKey);
+        }
+
+        function openDayDialog(dateIso) {
+            const labels = currentData.labels || {};
+            const day = (currentData.days || []).find(d => d.date === dateIso);
+            const events = day ? day.events : [];
+
+            // Fallback-Label wenn Tag außerhalb von currentData.days liegt
+            const [y, m, d] = dateIso.split('-').map(Number);
+            const fallbackLabel = (labels.months || [])[m - 1] + ' ' + d + ', ' + y;
+            const title = day ? (day.label + ' · ' + day.dateShort) : fallbackLabel;
+
+            let body;
+            if (events.length === 0) {
+                body = '<div class="tvkal__empty">' + escapeHtml(labels.noEvents || 'No events') + '</div>';
+            } else {
+                body = events.map(e => {
+                    const hasLocation = currentData.config.showLocation && e.location;
+                    return (
+                        '<div class="tvkal__item">' +
+                            '<div class="tvkal__time">' + escapeHtml(e.timeLabel) + '</div>' +
+                            '<div class="tvkal__content">' +
+                                '<div class="tvkal__title">' + escapeHtml(e.title) + '</div>' +
+                                (hasLocation ? '<div class="tvkal__info">' + escapeHtml(e.location) + '</div>' : '') +
+                            '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+            }
+
+            overlay.innerHTML =
+                '<div class="tvkal__overlay-card">' +
+                    '<div class="tvkal__overlay-body">' +
+                        '<div class="tvkal__dialog-title">' + escapeHtml(title) + '</div>' +
+                        body +
+                    '</div>' +
+                    '<div class="tvkal__overlay-actions">' +
+                        '<button type="button" class="primary" data-action="close">' + escapeHtml(labels.close || 'Close') + '</button>' +
+                    '</div>' +
+                '</div>';
+            overlay.classList.add('open');
+            overlay.querySelector('[data-action="close"]').addEventListener('click', closeOverlay);
+            overlay.addEventListener('click', onOverlayClick);
+            document.addEventListener('keydown', onKey);
+        }
+
+        function onOverlayClick(e) {
+            if (e.target === overlay) closeOverlay();
+        }
+        function onKey(e) {
+            if (e.key === 'Escape') closeOverlay();
+        }
+        function closeOverlay() {
+            overlay.classList.remove('open');
+            overlay.innerHTML = '';
+            overlay.removeEventListener('click', onOverlayClick);
+            document.removeEventListener('keydown', onKey);
+        }
+
+        // ── Bootstrap ───────────────────────────────────────────────────
+        window.handleMessage = function (data) { render(data); };
+        if (window.__tvkalInitialData) {
+            render(window.__tvkalInitialData);
+            delete window.__tvkalInitialData;
+        }
+    })();
+</script>

@@ -1,0 +1,12 @@
+{
+    "id": "{56EBA615-7964-19D2-42D9-9C9306609D05}",
+    "name": "TileVisu Minikalender",
+    "type": 3,
+    "vendor": "",
+    "aliases": [],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "TVKAL",
+    "url": ""
+}
