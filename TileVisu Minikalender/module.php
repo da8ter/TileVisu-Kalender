@@ -97,7 +97,7 @@ class TileVisuMinikalender extends IPSModule
         return [
             'generatedAt' => time(),
             'days'        => [],
-            'eventDates'  => [],
+            'allEvents'   => [],
             'monthInfo'   => $this->GetMonthInfo(),
             'config'      => $this->GetFrontendConfig(),
             'labels'      => $this->GetFrontendLabels()
@@ -145,6 +145,15 @@ class TileVisuMinikalender extends IPSModule
                 $this->Translate('Fri'),
                 $this->Translate('Sat')
             ],
+            'weekdaysLong' => [
+                $this->Translate('Sunday'),
+                $this->Translate('Monday'),
+                $this->Translate('Tuesday'),
+                $this->Translate('Wednesday'),
+                $this->Translate('Thursday'),
+                $this->Translate('Friday'),
+                $this->Translate('Saturday')
+            ],
             'months'      => [
                 $this->Translate('January'),
                 $this->Translate('February'),
@@ -170,15 +179,13 @@ class TileVisuMinikalender extends IPSModule
             return $this->BuildEmptyPayload();
         }
 
-        $daysAhead  = max(1, $this->ReadPropertyInteger('DaysAhead'));
-        $from       = strtotime('today');
-        $listTo     = $from + $daysAhead * 86400 - 1;
-        $monthStart = strtotime('first day of this month 00:00:00');
-        $monthEnd   = strtotime('first day of next month 00:00:00') - 1;
-        $fetchTo    = max($listTo, $monthEnd);
-        $this->SendDebug('BuildPayload', sprintf('Kalender #%d, Abruf %s … %s', $calendarID, date('Y-m-d H:i', $from), date('Y-m-d H:i', $fetchTo)), 0);
+        $daysAhead = max(1, $this->ReadPropertyInteger('DaysAhead'));
+        $from      = strtotime('today');
+        $fetchFrom = strtotime('-1 year today 00:00:00');
+        $fetchTo   = strtotime('+1 year today 23:59:59');
+        $this->SendDebug('BuildPayload', sprintf('Kalender #%d, Abruf %s … %s', $calendarID, date('Y-m-d H:i', $fetchFrom), date('Y-m-d H:i', $fetchTo)), 0);
 
-        $events = $this->FetchEvents($calendarID, $from, $fetchTo);
+        $events = $this->FetchEvents($calendarID, $fetchFrom, $fetchTo);
         if ($events === null) {
             $this->SendDebug('BuildPayload', 'Abbruch: FetchEvents lieferte NULL', 0);
             return $this->BuildEmptyPayload();
@@ -199,40 +206,44 @@ class TileVisuMinikalender extends IPSModule
             $this->SendDebug('LimitEvents', sprintf('MaxEvents=%d → %d Termine nach Limit', $maxEvents, $limited), 0);
         }
 
-        $eventDates = $this->CollectEventDates($events, $monthStart, $monthEnd);
-        $this->SendDebug('CollectEventDates', sprintf('%d Tage im aktuellen Monat mit Terminen', count($eventDates)), 0);
+        $allEvents = $this->BuildAllEvents($events);
+        $this->SendDebug('BuildAllEvents', sprintf('%d Events für Monatsnavigation normalisiert', count($allEvents)), 0);
 
         return [
             'generatedAt' => time(),
             'days'        => $days,
-            'eventDates'  => $eventDates,
+            'allEvents'   => $allEvents,
             'monthInfo'   => $this->GetMonthInfo(),
             'config'      => $this->GetFrontendConfig(),
             'labels'      => $this->GetFrontendLabels()
         ];
     }
 
-    private function CollectEventDates(array $events, int $monthStart, int $monthEnd): array
+    private function BuildAllEvents(array $events): array
     {
-        $dates = [];
+        $labels = $this->GetFrontendLabels();
+        $out    = [];
         foreach ($events as $e) {
             $evFrom = (int) ($e['From'] ?? 0);
             $evTo   = (int) ($e['To'] ?? 0);
             if ($evFrom === 0 || $evTo === 0) {
                 continue;
             }
-            if ($evTo <= $monthStart || $evFrom > $monthEnd) {
-                continue;
-            }
-            $curStart = max($evFrom, $monthStart);
-            $curEnd   = min($evTo - 1, $monthEnd);
-            $dayIter  = strtotime(date('Y-m-d', $curStart) . ' 00:00:00');
-            while ($dayIter <= $curEnd) {
-                $dates[date('Y-m-d', $dayIter)] = true;
-                $dayIter += 86400;
-            }
+            $allDay = !empty($e['allDay']);
+            $out[] = [
+                'uid'         => (string) ($e['UID'] ?? ''),
+                'title'       => (string) ($e['Name'] ?? ''),
+                'from'        => $evFrom,
+                'to'          => $evTo,
+                'allDay'      => $allDay,
+                'timeLabel'   => $allDay ? $labels['allDay'] : date('H:i', $evFrom) . ' – ' . date('H:i', $evTo),
+                'location'    => (string) ($e['Location'] ?? ''),
+                'description' => (string) ($e['Description'] ?? ''),
+                'categories'  => (string) ($e['Categories'] ?? ''),
+                'status'      => (string) ($e['Status'] ?? '')
+            ];
         }
-        return array_keys($dates);
+        return $out;
     }
 
     /**
@@ -309,10 +320,10 @@ class TileVisuMinikalender extends IPSModule
 
     private function GroupEventsByDay(array $events, int $from, int $daysAhead): array
     {
-        $now     = time();
-        $labels  = $this->GetFrontendLabels();
-        $weekday = $labels['weekdays'];
-        $days    = [];
+        $now         = time();
+        $labels      = $this->GetFrontendLabels();
+        $weekdayLong = $labels['weekdaysLong'];
+        $days        = [];
 
         for ($i = 0; $i < $daysAhead; $i++) {
             $dayStart = $from + $i * 86400;
@@ -322,7 +333,7 @@ class TileVisuMinikalender extends IPSModule
             $label = match ($i) {
                 0       => $labels['today'],
                 1       => $labels['tomorrow'],
-                default => $weekday[(int) date('w', $dayStart)] . ' ' . date('d.m.', $dayStart)
+                default => $weekdayLong[(int) date('w', $dayStart)]
             };
 
             $dayEvents = [];

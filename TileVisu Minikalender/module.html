@@ -1,4 +1,5 @@
 <style>
+    body { margin-bottom: 0; }
     .tvkal {
         --bg: var(--card-color);
         --card: var(--card-color);
@@ -28,10 +29,10 @@
     .tvkal__body {
         flex: 1 1 auto;
         min-height: 0;
-        padding: var(--gap);
+        padding: 0;
         display: flex;
         flex-direction: column;
-        gap: calc(var(--gap) / 2);
+        gap: calc(var(--gap) / 4);
         overflow: hidden;
     }
 
@@ -44,7 +45,7 @@
         min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: calc(var(--gap) / 2);
+        gap: calc(var(--gap) / 4);
         overflow: auto;
         overscroll-behavior: contain;
         touch-action: pan-y;
@@ -162,19 +163,45 @@
         min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 4px;
     }
-    .tvkal__month-header {
+    .tvkal__month-nav {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 2px 4px;
+    }
+    .tvkal__month-nav-btn {
+        flex: 0 0 auto;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        padding: 0;
+        font: inherit;
+        transition: border-color .12s ease, transform .04s ease;
+    }
+    .tvkal__month-nav-btn:hover { border-color: var(--accent); }
+    .tvkal__month-nav-btn:active { transform: scale(.94); }
+    .tvkal__month-nav-btn svg { width: 14px; height: 14px; fill: currentColor; }
+    .tvkal__month-nav-title {
+        flex: 1 1 auto;
+        text-align: center;
         font-size: 13px;
         font-weight: 600;
         color: var(--text);
-        text-align: center;
-        padding: 4px 0;
         letter-spacing: 0.3px;
     }
     .tvkal__month-grid {
-        flex: 1 1 auto;
-        min-height: 0;
+        flex-shrink: 0;
         display: grid;
         grid-template-columns: repeat(7, 1fr);
         gap: 4px;
@@ -201,7 +228,10 @@
         color: var(--text);
         background: transparent;
         user-select: none;
+        cursor: pointer;
+        transition: transform .08s ease, border-color .12s ease;
     }
+    .tvkal__month-day:hover { border-color: var(--border); }
     .tvkal__month-day--other { color: var(--muted); opacity: 0.35; }
     .tvkal__month-day--today {
         border-color: var(--accent);
@@ -212,12 +242,39 @@
         border-color: var(--accent);
         color: var(--text);
         font-weight: 700;
-        cursor: pointer;
-        transition: transform .08s ease;
     }
     .tvkal__month-day--has-events:hover { transform: scale(1.05); }
     .tvkal__month-day--today.tvkal__month-day--has-events {
         background: var(--accent);
+    }
+    .tvkal__month-day--selected {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+    }
+
+    .tvkal__day-events {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--gap) / 4);
+        overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent;
+        padding-top: 4px;
+    }
+    .tvkal__day-events::-webkit-scrollbar { width: 6px; }
+    .tvkal__day-events::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--accent) 70%, transparent);
+        border-radius: 999px;
+    }
+    .tvkal__day-events-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 4px 4px 2px;
     }
 
     /* ── Bottom-Nav ──────────────────────────────────────────────────── */
@@ -341,8 +398,17 @@
         </div>
         <div class="tvkal__view" id="tvkal-view-month">
             <div class="tvkal__month">
-                <div class="tvkal__month-header" id="tvkal-month-header"></div>
+                <div class="tvkal__month-nav">
+                    <button type="button" class="tvkal__month-nav-btn" id="tvkal-month-prev" aria-label="Previous month">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M233.4 406.6L118.6 291.8C112.3 285.5 112.3 275.2 118.6 268.9L233.4 154.1C239.7 147.8 250 147.8 256.3 154.1L279 176.8C285.3 183.1 285.3 193.4 279 199.7L189.2 289.5L514 289.5C523.2 289.5 530.6 296.9 530.6 306.1L530.6 336.2C530.6 345.4 523.2 352.8 514 352.8L189.2 352.8L279 442.6C285.3 448.9 285.3 459.2 279 465.5L256.3 488.2C250 494.5 239.7 494.5 233.4 488.2L233.4 406.6z"/></svg>
+                    </button>
+                    <div class="tvkal__month-nav-title" id="tvkal-month-title"></div>
+                    <button type="button" class="tvkal__month-nav-btn" id="tvkal-month-next" aria-label="Next month">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M406.6 233.4L521.4 348.2C527.7 354.5 527.7 364.8 521.4 371.1L406.6 485.9C400.3 492.2 390 492.2 383.7 485.9L361 463.2C354.7 456.9 354.7 446.6 361 440.3L450.8 350.5L126 350.5C116.8 350.5 109.4 343.1 109.4 333.9L109.4 303.8C109.4 294.6 116.8 287.2 126 287.2L450.8 287.2L361 197.4C354.7 191.1 354.7 180.8 361 174.5L383.7 151.8C390 145.5 400.3 145.5 406.6 151.8L406.6 233.4z"/></svg>
+                    </button>
+                </div>
                 <div class="tvkal__month-grid" id="tvkal-month-grid"></div>
+                <div class="tvkal__day-events" id="tvkal-day-events"></div>
             </div>
         </div>
     </div>
@@ -362,8 +428,11 @@
         const listEl      = document.getElementById('tvkal-list');
         const viewList    = document.getElementById('tvkal-view-list');
         const viewMonth   = document.getElementById('tvkal-view-month');
-        const monthHeader = document.getElementById('tvkal-month-header');
+        const monthTitle  = document.getElementById('tvkal-month-title');
         const monthGrid   = document.getElementById('tvkal-month-grid');
+        const monthPrev   = document.getElementById('tvkal-month-prev');
+        const monthNext   = document.getElementById('tvkal-month-next');
+        const dayEventsEl = document.getElementById('tvkal-day-events');
         const navList     = document.getElementById('tvkal-nav-list');
         const navMonth    = document.getElementById('tvkal-nav-month');
         const overlay     = document.getElementById('tvkal-overlay');
@@ -371,6 +440,7 @@
         let currentData = null;
         let runningInterval = null;
         let activeView = 'list';
+        const monthState = { year: null, month: null, selectedDate: null };
 
         function escapeHtml(str) {
             return String(str == null ? '' : str)
@@ -384,9 +454,51 @@
         function render(data) {
             if (!data || typeof data !== 'object') return;
             currentData = data;
+            // Initial Monatsstate nur beim ersten Laden auf "heute" setzen
+            if (monthState.year === null) {
+                const info = data.monthInfo || {};
+                monthState.year = info.year || new Date().getFullYear();
+                monthState.month = info.month || (new Date().getMonth() + 1);
+                monthState.selectedDate = info.today || null;
+            }
             renderList();
             renderMonth();
             startRunningTicker();
+        }
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function isoFromParts(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
+
+        function getEventDatesSet(year, month) {
+            const monthStart = new Date(year, month - 1, 1);
+            const monthEnd   = new Date(year, month, 1); // exklusiv
+            const dates = new Set();
+            (currentData.allEvents || []).forEach(ev => {
+                const evFrom = new Date(ev.from * 1000);
+                const evTo   = new Date(ev.to * 1000);
+                if (evTo <= monthStart || evFrom >= monthEnd) return;
+                const cur = new Date(Math.max(evFrom.getTime(), monthStart.getTime()));
+                cur.setHours(0, 0, 0, 0);
+                const last = new Date(Math.min(evTo.getTime() - 1, monthEnd.getTime() - 1));
+                last.setHours(0, 0, 0, 0);
+                while (cur <= last) {
+                    dates.add(isoFromParts(cur.getFullYear(), cur.getMonth() + 1, cur.getDate()));
+                    cur.setDate(cur.getDate() + 1);
+                }
+            });
+            return dates;
+        }
+
+        function getEventsForDate(iso) {
+            const [y, m, d] = iso.split('-').map(Number);
+            const dayStart = new Date(y, m - 1, d, 0, 0, 0).getTime() / 1000;
+            const dayEnd   = dayStart + 86400;
+            return (currentData.allEvents || [])
+                .filter(ev => ev.from < dayEnd && ev.to > dayStart)
+                .sort((a, b) => {
+                    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+                    return a.from - b.from;
+                });
         }
 
         // ── List view ───────────────────────────────────────────────────
@@ -461,43 +573,40 @@
         function renderMonth() {
             const labels = currentData.labels || {};
             const info = currentData.monthInfo || {};
-            const eventDates = new Set(currentData.eventDates || []);
             const months = labels.months || [];
             const weekdays = labels.weekdays || [];
-            const year = info.year || new Date().getFullYear();
-            const month = info.month || (new Date().getMonth() + 1);
+            const year = monthState.year;
+            const month = monthState.month;
             const todayIso = info.today || '';
+            const eventDates = getEventDatesSet(year, month);
 
-            monthHeader.textContent = (months[month - 1] || '') + ' ' + year;
+            monthTitle.textContent = (months[month - 1] || '') + ' ' + year;
 
-            // Mo-So reihenfolge (weekdays sind [So, Mo, Di, Mi, Do, Fr, Sa])
+            // Mo-So Reihenfolge (weekdays sind [So, Mo, Di, Mi, Do, Fr, Sa])
             const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
             const weekdayHeader = weekdayOrder.map(i =>
                 '<div class="tvkal__month-weekday">' + escapeHtml(weekdays[i] || '') + '</div>'
             ).join('');
 
             const firstOfMonth = new Date(year, month - 1, 1);
-            // getDay(): 0=Sun ... 6=Sat → Montag-basiert mappen
-            const jsDow = firstOfMonth.getDay();
-            const offset = (jsDow + 6) % 7;
+            const jsDow = firstOfMonth.getDay(); // 0=Sun ... 6=Sat
+            const offset = (jsDow + 6) % 7;      // Montag-basiert
             const daysInMonth = new Date(year, month, 0).getDate();
             const prevMonthDays = new Date(year, month - 1, 0).getDate();
 
             let cells = '';
-            // Padding vorne (Tage vom Vormonat, ausgegraut)
             for (let i = offset - 1; i >= 0; i--) {
                 const d = prevMonthDays - i;
                 cells += '<div class="tvkal__month-day tvkal__month-day--other">' + d + '</div>';
             }
-            // Monatstage
             for (let d = 1; d <= daysInMonth; d++) {
-                const iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+                const iso = isoFromParts(year, month, d);
                 const cls = ['tvkal__month-day'];
                 if (eventDates.has(iso)) cls.push('tvkal__month-day--has-events');
                 if (iso === todayIso) cls.push('tvkal__month-day--today');
+                if (iso === monthState.selectedDate) cls.push('tvkal__month-day--selected');
                 cells += '<div class="' + cls.join(' ') + '" data-date="' + iso + '">' + d + '</div>';
             }
-            // Padding hinten bis zum nächsten vollständigen Wochenende (Sonntag)
             const totalSoFar = offset + daysInMonth;
             const trailing = (7 - (totalSoFar % 7)) % 7;
             for (let d = 1; d <= trailing; d++) {
@@ -506,10 +615,93 @@
 
             monthGrid.innerHTML = weekdayHeader + cells;
 
-            monthGrid.querySelectorAll('.tvkal__month-day--has-events').forEach(el => {
-                el.addEventListener('click', () => openDayDialog(el.getAttribute('data-date')));
+            monthGrid.querySelectorAll('.tvkal__month-day[data-date]').forEach(el => {
+                el.addEventListener('click', () => {
+                    monthState.selectedDate = el.getAttribute('data-date');
+                    renderMonth();
+                });
             });
+
+            renderDayEvents();
         }
+
+        function renderDayEvents() {
+            const labels = currentData.labels || {};
+            const config = currentData.config || {};
+            const iso = monthState.selectedDate;
+            if (!iso) {
+                dayEventsEl.innerHTML = '';
+                return;
+            }
+
+            const [y, m, d] = iso.split('-').map(Number);
+            const weekdaysLong = labels.weekdaysLong || labels.weekdays || [];
+            const months = labels.months || [];
+            const dayDate = new Date(y, m - 1, d);
+            const weekday = weekdaysLong[dayDate.getDay()] || '';
+            const todayIso = (currentData.monthInfo || {}).today;
+            let title;
+            if (iso === todayIso) {
+                title = labels.today || weekday;
+            } else {
+                title = weekday + ', ' + d + '. ' + (months[m - 1] || '') + ' ' + y;
+            }
+
+            const events = getEventsForDate(iso);
+            let body;
+            if (events.length === 0) {
+                body = '<div class="tvkal__empty">' + escapeHtml(labels.noEvents || 'No events') + '</div>';
+            } else {
+                body = events.map((ev, idx) => {
+                    const cls = ['tvkal__item'];
+                    if (config.showDescriptionPopup) cls.push('tvkal__item--clickable');
+                    const hasLocation = config.showLocation && ev.location;
+                    return (
+                        '<div class="' + cls.join(' ') + '" data-day-ev-idx="' + idx + '">' +
+                            '<div class="tvkal__time">' + escapeHtml(ev.timeLabel) + '</div>' +
+                            '<div class="tvkal__content">' +
+                                '<div class="tvkal__title">' + escapeHtml(ev.title) + '</div>' +
+                                (hasLocation ? '<div class="tvkal__info">' + escapeHtml(ev.location) + '</div>' : '') +
+                            '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+            }
+
+            dayEventsEl.innerHTML =
+                '<div class="tvkal__day-events-title">' + escapeHtml(title) + '</div>' +
+                body;
+
+            if (config.showDescriptionPopup) {
+                dayEventsEl.querySelectorAll('.tvkal__item--clickable').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const idx = parseInt(el.getAttribute('data-day-ev-idx'), 10);
+                        const ev = events[idx];
+                        if (ev) openEventDialog(ev, { label: title, dateShort: pad2(d) + '.' + pad2(m) + '.' });
+                    });
+                });
+            }
+        }
+
+        function shiftMonth(delta) {
+            let y = monthState.year;
+            let m = monthState.month + delta;
+            while (m < 1) { m += 12; y--; }
+            while (m > 12) { m -= 12; y++; }
+            monthState.year = y;
+            monthState.month = m;
+            // Auswahl beibehalten wenn sie in den neuen Monat passt, sonst 1. des Monats
+            const sel = monthState.selectedDate;
+            if (sel) {
+                const [sy, sm] = sel.split('-').map(Number);
+                if (sy !== y || sm !== m) {
+                    monthState.selectedDate = isoFromParts(y, m, 1);
+                }
+            }
+            renderMonth();
+        }
+        monthPrev.addEventListener('click', () => shiftMonth(-1));
+        monthNext.addEventListener('click', () => shiftMonth(+1));
 
         // ── Running-Ticker ──────────────────────────────────────────────
         function startRunningTicker() {
@@ -559,50 +751,6 @@
                         '<div class="tvkal__dialog-title">' + escapeHtml(ev.title) + '</div>' +
                         '<div class="tvkal__dialog-when">' + escapeHtml(whenText) + '</div>' +
                         rowsHtml +
-                    '</div>' +
-                    '<div class="tvkal__overlay-actions">' +
-                        '<button type="button" class="primary" data-action="close">' + escapeHtml(labels.close || 'Close') + '</button>' +
-                    '</div>' +
-                '</div>';
-            overlay.classList.add('open');
-            overlay.querySelector('[data-action="close"]').addEventListener('click', closeOverlay);
-            overlay.addEventListener('click', onOverlayClick);
-            document.addEventListener('keydown', onKey);
-        }
-
-        function openDayDialog(dateIso) {
-            const labels = currentData.labels || {};
-            const day = (currentData.days || []).find(d => d.date === dateIso);
-            const events = day ? day.events : [];
-
-            // Fallback-Label wenn Tag außerhalb von currentData.days liegt
-            const [y, m, d] = dateIso.split('-').map(Number);
-            const fallbackLabel = (labels.months || [])[m - 1] + ' ' + d + ', ' + y;
-            const title = day ? (day.label + ' · ' + day.dateShort) : fallbackLabel;
-
-            let body;
-            if (events.length === 0) {
-                body = '<div class="tvkal__empty">' + escapeHtml(labels.noEvents || 'No events') + '</div>';
-            } else {
-                body = events.map(e => {
-                    const hasLocation = currentData.config.showLocation && e.location;
-                    return (
-                        '<div class="tvkal__item">' +
-                            '<div class="tvkal__time">' + escapeHtml(e.timeLabel) + '</div>' +
-                            '<div class="tvkal__content">' +
-                                '<div class="tvkal__title">' + escapeHtml(e.title) + '</div>' +
-                                (hasLocation ? '<div class="tvkal__info">' + escapeHtml(e.location) + '</div>' : '') +
-                            '</div>' +
-                        '</div>'
-                    );
-                }).join('');
-            }
-
-            overlay.innerHTML =
-                '<div class="tvkal__overlay-card">' +
-                    '<div class="tvkal__overlay-body">' +
-                        '<div class="tvkal__dialog-title">' + escapeHtml(title) + '</div>' +
-                        body +
                     '</div>' +
                     '<div class="tvkal__overlay-actions">' +
                         '<button type="button" class="primary" data-action="close">' + escapeHtml(labels.close || 'Close') + '</button>' +
