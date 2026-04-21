@@ -232,18 +232,59 @@ class TileVisuMinikalender extends IPSModule
             $allDay = !empty($e['allDay']);
             $out[] = [
                 'uid'         => (string) ($e['UID'] ?? ''),
-                'title'       => (string) ($e['Name'] ?? ''),
+                'title'       => $this->CleanInline((string) ($e['Name'] ?? '')),
                 'from'        => $evFrom,
                 'to'          => $evTo,
                 'allDay'      => $allDay,
                 'timeLabel'   => $allDay ? $labels['allDay'] : date('H:i', $evFrom) . ' – ' . date('H:i', $evTo),
-                'location'    => (string) ($e['Location'] ?? ''),
-                'description' => (string) ($e['Description'] ?? ''),
-                'categories'  => (string) ($e['Categories'] ?? ''),
+                'location'    => $this->CleanInline((string) ($e['Location'] ?? '')),
+                'description' => $this->CleanMulti((string) ($e['Description'] ?? '')),
+                'categories'  => $this->CleanInline((string) ($e['Categories'] ?? '')),
                 'status'      => (string) ($e['Status'] ?? '')
             ];
         }
         return $out;
+    }
+
+    /**
+     * Bereinigt einzeilige Texte (Titel, Location, Kategorien):
+     * - löst iCal-Escape-Sequenzen auf (\n, \r, \,, \;, \\)
+     * - ersetzt Zeilenumbrüche/Tabs durch ", "
+     * - normalisiert Whitespace und Mehrfach-Kommas
+     */
+    private function CleanInline(string $s): string
+    {
+        if ($s === '') {
+            return '';
+        }
+        $s = str_replace(
+            ['\\n', '\\N', '\\r', '\\R', '\\,', '\\;', '\\\\'],
+            ["\n", "\n", "\r", "\r", ',', ';', '\\'],
+            $s
+        );
+        $s = preg_replace('/[\r\n\t]+/', ', ', $s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        $s = preg_replace('/(\s*,\s*)+/', ', ', $s);
+        return trim($s, " ,");
+    }
+
+    /**
+     * Bereinigt mehrzeilige Texte (Beschreibung): iCal-Escapes auflösen,
+     * echte Zeilenumbrüche behalten, aber Whitespace innerhalb der Zeile normalisieren.
+     */
+    private function CleanMulti(string $s): string
+    {
+        if ($s === '') {
+            return '';
+        }
+        $s = str_replace(
+            ['\\n', '\\N', '\\r', '\\R', '\\,', '\\;', '\\\\'],
+            ["\n", "\n", "\n", "\n", ',', ';', '\\'],
+            $s
+        );
+        $s = str_replace(["\r\n", "\r"], "\n", $s);
+        $s = preg_replace('/[ \t]+/', ' ', $s);
+        return trim($s);
     }
 
     /**
@@ -350,14 +391,14 @@ class TileVisuMinikalender extends IPSModule
                 $allDay = !empty($e['allDay']);
                 $dayEvents[] = [
                     'uid'         => (string) ($e['UID'] ?? ''),
-                    'title'       => (string) ($e['Name'] ?? ''),
+                    'title'       => $this->CleanInline((string) ($e['Name'] ?? '')),
                     'timeLabel'   => $allDay ? $labels['allDay'] : $this->FormatTimeRange($evFrom, $evTo, $dayStart, $dayEnd),
                     'allDay'      => $allDay,
                     'from'        => $evFrom,
                     'to'          => $evTo,
-                    'location'    => (string) ($e['Location'] ?? ''),
-                    'description' => (string) ($e['Description'] ?? ''),
-                    'categories'  => (string) ($e['Categories'] ?? ''),
+                    'location'    => $this->CleanInline((string) ($e['Location'] ?? '')),
+                    'description' => $this->CleanMulti((string) ($e['Description'] ?? '')),
+                    'categories'  => $this->CleanInline((string) ($e['Categories'] ?? '')),
                     'status'      => (string) ($e['Status'] ?? ''),
                     'running'     => ($now >= $evFrom && $now < $evTo)
                 ];
