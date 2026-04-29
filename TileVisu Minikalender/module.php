@@ -51,12 +51,25 @@ class TileVisuMinikalender extends IPSModule
         }
 
         $this->SetStatus(102);
-        $minutes = max(1, $this->ReadPropertyInteger('UpdateInterval'));
-        $this->SetTimerInterval('Update', $minutes * 60 * 1000);
+        $this->ScheduleNextTimer();
 
         if (IPS_GetKernelRunlevel() === KR_READY) {
             $this->Update();
         }
+    }
+
+    /**
+     * Setzt den Update-Timer so, dass er spätestens kurz nach Mitternacht feuert,
+     * damit "Heute"/"Morgen"-Labels beim Tageswechsel zeitnah erneuert werden.
+     */
+    private function ScheduleNextTimer(): void
+    {
+        $minutes       = max(1, $this->ReadPropertyInteger('UpdateInterval'));
+        $defaultNextS  = $minutes * 60;
+        $untilMidnight = strtotime('tomorrow 00:00:30') - time();
+        $nextS         = max(30, min($defaultNextS, $untilMidnight));
+        $this->SetTimerInterval('Update', $nextS * 1000);
+        $this->SendDebug('ScheduleNextTimer', sprintf('Nächster Tick in %ds (Default %ds, bis Mitternacht %ds)', $nextS, $defaultNextS, $untilMidnight), 0);
     }
 
     public function GetVisualizationTile()
@@ -81,6 +94,8 @@ class TileVisuMinikalender extends IPSModule
         $totalEvents = array_sum(array_map(static fn($d) => count($d['events'] ?? []), $payload['days'] ?? []));
         $duration = round((microtime(true) - $start) * 1000, 1);
         $this->SendDebug('Update', sprintf('Fertig: %d Tage, %d Termine gesamt, Payload %d Bytes, Dauer %.1f ms', count($payload['days'] ?? []), $totalEvents, strlen($json), $duration), 0);
+
+        $this->ScheduleNextTimer();
     }
 
     private function SendPayload(?array $payload = null): void

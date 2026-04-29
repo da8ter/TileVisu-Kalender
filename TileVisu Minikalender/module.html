@@ -439,8 +439,20 @@
 
         let currentData = null;
         let runningInterval = null;
+        let dayRolloverTimeout = null;
+        let lastSeenLocalDate = null;
         let activeView = 'list';
         const monthState = { year: null, month: null, selectedDate: null };
+
+        function localIsoToday() {
+            const d = new Date();
+            return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+        }
+        function localIsoTomorrow() {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+        }
 
         function escapeHtml(str) {
             return String(str == null ? '' : str)
@@ -454,16 +466,25 @@
         function render(data) {
             if (!data || typeof data !== 'object') return;
             currentData = data;
+            lastSeenLocalDate = localIsoToday();
             // Initial Monatsstate nur beim ersten Laden auf "heute" setzen
             if (monthState.year === null) {
-                const info = data.monthInfo || {};
-                monthState.year = info.year || new Date().getFullYear();
-                monthState.month = info.month || (new Date().getMonth() + 1);
-                monthState.selectedDate = info.today || null;
+                const nowYear = new Date().getFullYear();
+                const nowMonth = new Date().getMonth() + 1;
+                monthState.year = nowYear;
+                monthState.month = nowMonth;
+                monthState.selectedDate = lastSeenLocalDate;
             }
             renderList();
             renderMonth();
             startRunningTicker();
+            startDayRolloverTicker();
+        }
+
+        function rerenderFromState() {
+            if (!currentData) return;
+            renderList();
+            renderMonth();
         }
 
         function pad2(n) { return String(n).padStart(2, '0'); }
@@ -505,7 +526,10 @@
         function renderList() {
             const labels = currentData.labels || {};
             const config = currentData.config || {};
-            const days = Array.isArray(currentData.days) ? currentData.days : [];
+            const daysRaw = Array.isArray(currentData.days) ? currentData.days : [];
+            const todayIso = localIsoToday();
+            // Vergangene Tage ausblenden (nach Mitternacht vor dem nächsten Backend-Tick)
+            const days = daysRaw.filter(d => d.date >= todayIso);
             const totalEvents = days.reduce((n, d) => n + (d.events ? d.events.length : 0), 0);
 
             if (totalEvents === 0) {
@@ -516,12 +540,18 @@
             attachItemHandlers(config);
         }
 
+        function dynamicDayLabel(day, labels) {
+            if (day.date === localIsoToday())    return labels.today    || day.label;
+            if (day.date === localIsoTomorrow()) return labels.tomorrow || day.label;
+            return day.label;
+        }
+
         function renderDay(day, labels, config) {
             const events = day.events || [];
             if (events.length === 0) return '';
             return (
                 '<div class="tvkal__section-header">' +
-                    '<span>' + escapeHtml(day.label) + '</span>' +
+                    '<span>' + escapeHtml(dynamicDayLabel(day, labels)) + '</span>' +
                     '<span class="date">' + escapeHtml(day.dateShort) + '</span>' +
                 '</div>' +
                 events.map((e, idx) => renderEvent(e, idx, day, config)).join('')
@@ -572,12 +602,11 @@
         // ── Month view ──────────────────────────────────────────────────
         function renderMonth() {
             const labels = currentData.labels || {};
-            const info = currentData.monthInfo || {};
             const months = labels.months || [];
             const weekdays = labels.weekdays || [];
             const year = monthState.year;
             const month = monthState.month;
-            const todayIso = info.today || '';
+            const todayIso = localIsoToday();
             const eventDates = getEventDatesSet(year, month);
 
             monthTitle.textContent = (months[month - 1] || '') + ' ' + year;
@@ -639,10 +668,11 @@
             const months = labels.months || [];
             const dayDate = new Date(y, m - 1, d);
             const weekday = weekdaysLong[dayDate.getDay()] || '';
-            const todayIso = (currentData.monthInfo || {}).today;
             let title;
-            if (iso === todayIso) {
+            if (iso === localIsoToday()) {
                 title = labels.today || weekday;
+            } else if (iso === localIsoTomorrow()) {
+                title = labels.tomorrow || weekday;
             } else {
                 title = weekday + ', ' + d + '. ' + (months[m - 1] || '') + ' ' + y;
             }
@@ -707,6 +737,37 @@
         function startRunningTicker() {
             if (runningInterval) return;
             runningInterval = setInterval(updateRunning, 30000);
+        }
+
+        // ── Tageswechsel: einmalig gezielt auf die nächste Mitternacht timen ──
+        function startDayRolloverTicker() {
+            scheduleNextDayRollover();
+            // Safety-Net: wenn der Tab geschlafen hat und setTimeout verpasst wurde,
+            // beim Wiedererscheinen prüfen, ob ein Tageswechsel stattfand.
+            if (!startDayRolloverTicker._wired) {
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) checkDayRollover();
+                });
+                startDayRolloverTicker._wired = true;
+            }
+        }
+        function scheduleNextDayRollover() {
+            if (dayRolloverTimeout) clearTimeout(dayRolloverTimeout);
+            const now = new Date();
+            // 5 s nach Mitternacht, um Zeitzonen-/Uhrenticks-Unschärfen abzufedern
+            const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+            const delay = Math.max(1000, next.getTime() - now.getTime());
+            dayRolloverTimeout = setTimeout(() => {
+                checkDayRollover();
+                scheduleNextDayRollover();
+            }, delay);
+        }
+        function checkDayRollover() {
+            const today = localIsoToday();
+            if (today !== lastSeenLocalDate) {
+                lastSeenLocalDate = today;
+                rerenderFromState();
+            }
         }
         function updateRunning() {
             if (!currentData || !currentData.config || !currentData.config.highlightRunning) return;
