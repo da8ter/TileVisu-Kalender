@@ -2,11 +2,11 @@
     "id": "{56EBA615-7964-19D2-42D9-9C9306609D05}",
     "name": "TileVisu Minikalender",
     "type": 3,
-    "vendor": "",
-    "aliases": [],
+    "vendor": "da8ter",
+    "aliases": ["Minikalender", "Kalender Kachel"],
     "parentRequirements": [],
     "childRequirements": [],
     "implemented": [],
     "prefix": "TVKAL",
-    "url": ""
+    "url": "https://github.com/da8ter/TileVisu-Kalender"
 }

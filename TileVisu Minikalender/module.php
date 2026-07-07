@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
-class TileVisuMinikalender extends IPSModule
+class TileVisuMinikalender extends IPSModuleStrict
 {
-    public function Create()
+    private const STATUS_ACTIVE = 102;
+    private const STATUS_NO_CALENDAR = 201;
+    private const STATUS_UNSUPPORTED_CALENDAR = 202;
+
+    public function Create(): void
     {
-        //Never delete this line!
         parent::Create();
 
         $this->RegisterPropertyInteger('CalendarID', 0);
@@ -22,20 +25,34 @@ class TileVisuMinikalender extends IPSModule
         $this->SetVisualizationType(1);
     }
 
-    public function Destroy()
+    public function Destroy(): void
     {
-        //Never delete this line!
         parent::Destroy();
     }
 
-    public function ApplyChanges()
+    public function ApplyChanges(): void
     {
-        //Never delete this line!
         parent::ApplyChanges();
 
+        // Kein Heavy Work vor KR_READY: function_exists() auf Fremdmodul-Funktionen ist
+        // erst nach dem Kernel-Start verlässlich — sonst landet die Instanz nach einem
+        // Symcon-Neustart fälschlich auf Status 202 und erholt sich nie.
+        if (IPS_GetKernelRunlevel() !== KR_READY) {
+            $this->RegisterMessage(0, IPS_KERNELSTARTED);
+            return;
+        }
+
         $calendarID = $this->ReadPropertyInteger('CalendarID');
+
+        foreach ($this->GetReferenceList() as $ref) {
+            $this->UnregisterReference($ref);
+        }
+        if ($calendarID > 0) {
+            $this->RegisterReference($calendarID);
+        }
+
         if ($calendarID <= 0 || !IPS_InstanceExists($calendarID)) {
-            $this->SetStatus(201);
+            $this->SetStatus(self::STATUS_NO_CALENDAR);
             $this->SetTimerInterval('Update', 0);
             $this->SetBuffer('LastData', '');
             $this->SendPayload();
@@ -43,18 +60,22 @@ class TileVisuMinikalender extends IPSModule
         }
 
         if ($this->GetCalendarCall($calendarID) === null) {
-            $this->SetStatus(202);
+            $this->SetStatus(self::STATUS_UNSUPPORTED_CALENDAR);
             $this->SetTimerInterval('Update', 0);
             $this->SetBuffer('LastData', '');
             $this->SendPayload();
             return;
         }
 
-        $this->SetStatus(102);
+        $this->SetStatus(self::STATUS_ACTIVE);
         $this->ScheduleNextTimer();
+        $this->Update();
+    }
 
-        if (IPS_GetKernelRunlevel() === KR_READY) {
-            $this->Update();
+    public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data): void
+    {
+        if ($Message === IPS_KERNELSTARTED) {
+            $this->ApplyChanges();
         }
     }
 
@@ -72,11 +93,15 @@ class TileVisuMinikalender extends IPSModule
         $this->SendDebug('ScheduleNextTimer', sprintf('Nächster Tick in %ds (Default %ds, bis Mitternacht %ds)', $nextS, $defaultNextS, $untilMidnight), 0);
     }
 
-    public function GetVisualizationTile()
+    public function GetVisualizationTile(): string
     {
         $module = file_get_contents(__DIR__ . '/module.html');
+        if ($module === false) {
+            $this->LogMessage('module.html could not be loaded', KL_ERROR);
+            return '';
+        }
         $payload = $this->BuildPayload();
-        $bootstrap = '<script>(()=>{const data=' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';if(typeof handleMessage==="function"){handleMessage(data);}else{window.__tvkalInitialData=data;}})();</script>';
+        $bootstrap = '<script>(()=>{const data=' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . ';if(typeof handleMessage==="function"){handleMessage(data);}else{window.__tvkalInitialData=data;}})();</script>';
         return $module . $bootstrap;
     }
 
@@ -87,7 +112,7 @@ class TileVisuMinikalender extends IPSModule
 
         $payload = $this->BuildPayload();
 
-        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $json = (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
         $this->SetBuffer('LastData', $json);
         $this->SendPayload($payload);
 
@@ -103,8 +128,11 @@ class TileVisuMinikalender extends IPSModule
         if ($payload === null) {
             $buffer = $this->GetBuffer('LastData');
             $payload = $buffer !== '' ? json_decode($buffer, true) : $this->BuildEmptyPayload();
+            if (!is_array($payload)) {
+                $payload = $this->BuildEmptyPayload();
+            }
         }
-        $this->UpdateVisualizationValue(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $this->UpdateVisualizationValue((string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
     }
 
     private function BuildEmptyPayload(): array
@@ -210,7 +238,9 @@ class TileVisuMinikalender extends IPSModule
             $this->SendDebug('FetchEvents', 'Rohdaten: ' . json_encode($events, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 0);
         }
 
-        $days = $this->GroupEventsByDay($events, $from, $daysAhead);
+        $labels = $this->GetFrontendLabels();
+
+        $days = $this->GroupEventsByDay($events, $from, $daysAhead, $labels);
         $grouped = array_sum(array_map(static fn($d) => count($d['events']), $days));
         $this->SendDebug('GroupEventsByDay', sprintf('%d Tage, %d Termine im Fenster', count($days), $grouped), 0);
 
@@ -221,7 +251,7 @@ class TileVisuMinikalender extends IPSModule
             $this->SendDebug('LimitEvents', sprintf('MaxEvents=%d → %d Termine nach Limit', $maxEvents, $limited), 0);
         }
 
-        $allEvents = $this->BuildAllEvents($events);
+        $allEvents = $this->BuildAllEvents($events, $labels);
         $this->SendDebug('BuildAllEvents', sprintf('%d Events für Monatsnavigation normalisiert', count($allEvents)), 0);
 
         return [
@@ -230,15 +260,17 @@ class TileVisuMinikalender extends IPSModule
             'allEvents'   => $allEvents,
             'monthInfo'   => $this->GetMonthInfo(),
             'config'      => $this->GetFrontendConfig(),
-            'labels'      => $this->GetFrontendLabels()
+            'labels'      => $labels
         ];
     }
 
-    private function BuildAllEvents(array $events): array
+    private function BuildAllEvents(array $events, array $labels): array
     {
-        $labels = $this->GetFrontendLabels();
-        $out    = [];
+        $out = [];
         foreach ($events as $e) {
+            if (!is_array($e)) {
+                continue;
+            }
             $evFrom = (int) ($e['From'] ?? 0);
             $evTo   = (int) ($e['To'] ?? 0);
             if ($evFrom === 0 || $evTo === 0) {
@@ -277,10 +309,11 @@ class TileVisuMinikalender extends IPSModule
             ["\n", "\n", "\r", "\r", ',', ';', '\\'],
             $s
         );
-        $s = preg_replace('/[\r\n\t]+/', ', ', $s);
-        $s = preg_replace('/\s+/', ' ', $s);
-        $s = preg_replace('/(\s*,\s*)+/', ', ', $s);
-        return trim($s, " ,");
+        // preg_replace liefert bei kaputtem UTF-8 aus externen Kalendern null — dann Rohwert behalten
+        $s = preg_replace('/[\r\n\t]+/', ', ', $s) ?? $s;
+        $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+        $s = preg_replace('/(\s*,\s*)+/', ', ', $s) ?? $s;
+        return trim($s, ' ,');
     }
 
     /**
@@ -298,22 +331,29 @@ class TileVisuMinikalender extends IPSModule
             $s
         );
         $s = str_replace(["\r\n", "\r"], "\n", $s);
-        $s = preg_replace('/[ \t]+/', ' ', $s);
+        $s = preg_replace('/[ \t]+/', ' ', $s) ?? $s;
         return trim($s);
     }
 
     /**
      * Ermittelt einen aufrufbaren Kalender-Endpoint.
-     * Rückgabe: ['fn' => string, 'args' => array] oder null wenn nichts Passendes gefunden.
+     * Rückgabe: ['fn' => string, 'argc' => int] oder null wenn nichts Passendes gefunden.
      */
     private function GetCalendarCall(int $instanceID): ?array
     {
-        $instance = @IPS_GetInstance($instanceID);
-        $moduleID = $instance['ModuleInfo']['ModuleID'] ?? '';
-        if ($moduleID === '') {
+        // IPS_GetInstance/IPS_GetModule können bei verwaisten Instanzen (Modul-Bibliothek
+        // deinstalliert) werfen — @ unterdrückt nur Warnungen, keine Exceptions.
+        try {
+            $instance = IPS_GetInstance($instanceID);
+            $moduleID = $instance['ModuleInfo']['ModuleID'] ?? '';
+            if ($moduleID === '') {
+                return null;
+            }
+            $prefix = IPS_GetModule($moduleID)['Prefix'] ?? '';
+        } catch (Throwable $e) {
+            $this->SendDebug('GetCalendarCall', 'Instanz/Modul nicht lesbar: ' . $e->getMessage(), 0);
             return null;
         }
-        $prefix = @IPS_GetModule($moduleID)['Prefix'] ?? '';
         if ($prefix === '') {
             return null;
         }
@@ -374,16 +414,17 @@ class TileVisuMinikalender extends IPSModule
         return $events;
     }
 
-    private function GroupEventsByDay(array $events, int $from, int $daysAhead): array
+    private function GroupEventsByDay(array $events, int $from, int $daysAhead, array $labels): array
     {
         $now         = time();
-        $labels      = $this->GetFrontendLabels();
         $weekdayLong = $labels['weekdaysLong'];
         $days        = [];
 
         for ($i = 0; $i < $daysAhead; $i++) {
-            $dayStart = $from + $i * 86400;
-            $dayEnd   = $dayStart + 86400;
+            // Kalendertage statt +86400: an DST-Tagen (23/25h) würden sonst alle
+            // Tagesgrenzen um eine Stunde driften (doppelte/übersprungene Tage).
+            $dayStart = (int) strtotime(sprintf('+%d day', $i), $from);
+            $dayEnd   = (int) strtotime('+1 day', $dayStart);
             $dateKey  = date('Y-m-d', $dayStart);
 
             $label = match ($i) {
@@ -394,6 +435,9 @@ class TileVisuMinikalender extends IPSModule
 
             $dayEvents = [];
             foreach ($events as $e) {
+                if (!is_array($e)) {
+                    continue;
+                }
                 $evFrom = (int) ($e['From'] ?? 0);
                 $evTo   = (int) ($e['To'] ?? 0);
                 if ($evFrom === 0 || $evTo === 0) {
@@ -419,7 +463,7 @@ class TileVisuMinikalender extends IPSModule
                 ];
             }
 
-            usort($dayEvents, static function ($a, $b) {
+            usort($dayEvents, static function (array $a, array $b): int {
                 if ($a['allDay'] !== $b['allDay']) {
                     return $a['allDay'] ? -1 : 1;
                 }
