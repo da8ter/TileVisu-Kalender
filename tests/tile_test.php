@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 /*
  * Öffnen der Kachel (GetVisualizationTile): der Zustand kommt aus dem Puffer LastData, solange er aktuell genug ist,
- * sonst aus dem Cache des Kalendermoduls; ein Neuabruf (<Prefix>_UpdateCalendar) läuft beim Öffnen nie. Die Kachel
- * ist mit und ohne Puffer byte-gleich; große Zustände liegen in Stücken unter der Puffergrenze; der Debug-Auszug der
- * Rohdaten bleibt klein.
+ * sonst aus dem Cache des Kalendermoduls; ein Neuabruf (<Prefix>_UpdateCalendar) läuft beim Öffnen nie synchron. Fehlt
+ * dann ein brauchbarer Stand, stößt das Öffnen einmal ein Update im Hintergrund an (RegisterOnceTimer, mit Sperre).
+ * Die Kachel ist mit und ohne Puffer byte-gleich; große Zustände liegen in Stücken unter der Puffergrenze; der
+ * Debug-Auszug der Rohdaten bleibt klein.
  */
 
 require __DIR__ . '/bootstrap.php';
@@ -125,13 +126,49 @@ check(calls() === [] && tileJson($html) === end($d->updates), 'Öffnen: kein Neu
 patchMeta($d, ['until' => time() - 1]);
 $stale = priv($d, 'ReadLastData')['json'];
 $html = $d->GetVisualizationTile();
-check(calls() === [] && tileJson($html) === $stale, 'Puffer abgelaufen: trotzdem kein Neuabruf, der letzte Stand bleibt');
-$d->buffers = [];
+check(calls() === [] && tileJson($html) === $stale && $d->onceTimers === [], 'Puffer abgelaufen, aber brauchbar: kein Neuabruf, kein Update im Hintergrund, der letzte Stand bleibt');
+
+echo "== Update im Hintergrund, wenn beim Öffnen kein Stand da ist\n";
+$d->buffers = []; // nach Reload oder Kernelstart
 $d->debug = [];
+$pushes = count($d->updates);
 $html = $d->GetVisualizationTile();
 $empty = json_decode((string) tileJson($html), true);
-check(calls() === [] && $empty['allEvents'] === [] && $empty['days'] === [], 'ohne Puffer: kein Neuabruf, leere Kachel bis zum nächsten Update');
-check(in_array('Kein Neuabruf beim Öffnen der Kachel: das Kalendermodul bietet nur _UpdateCalendar', array_column($d->debug, 1), true), 'der übersprungene Neuabruf steht im Debug');
+check(calls() === [] && $empty['allEvents'] === [] && $empty['days'] === [], 'ohne Stand: das Öffnen ruft _UpdateCalendar nicht synchron auf und liefert sofort den leeren Zustand');
+check($d->onceTimers === [['OpenUpdate', "TVKAL_Update(\$_IPS['TARGET']);"]] && count($d->updates) === $pushes, 'genau ein Update im Hintergrund angestoßen (RegisterOnceTimer), beim Öffnen noch nicht gelaufen');
+check(in_array('Kein Neuabruf beim Öffnen der Kachel: das Kalendermodul bietet nur _UpdateCalendar', array_column($d->debug, 1), true)
+    && in_array('Kein brauchbarer Stand: Update im Hintergrund angestoßen', array_column($d->debug, 1), true), 'beides steht im Debug');
+$d->GetVisualizationTile();
+$d->GetVisualizationTile();
+check(count($d->onceTimers) === 1 && calls() === [], 'weitere Öffnungen innerhalb der Sperre: kein weiteres Update');
+check(fireOnce($d) === 1 && calls() === ['DOWNLOAD_UpdateCalendar'], 'das Update im Hintergrund ruft genau einmal neu ab');
+$pushed = json_decode((string) end($d->updates), true);
+check(count($d->updates) === $pushes + 1 && count($pushed['allEvents']) === 5 && meta($d)['ok'] === true, 'und schickt den Stand an die offenen Kacheln');
+$html = $d->GetVisualizationTile();
+check(calls() === [] && $d->onceTimers === [] && tileJson($html) === end($d->updates), 'danach öffnet die Kachel aus dem Puffer, ohne weiteres Update');
+$lock = $d->buffers['OpenUpdateAt'];
+$d->buffers = ['OpenUpdateAt' => $lock];
+$d->GetVisualizationTile();
+check($d->onceTimers === [], 'Stand wieder weg, die Sperre (5 min) läuft noch: kein neues Update');
+$d->buffers['OpenUpdateAt'] = (string) (time() - 301);
+$d->GetVisualizationTile();
+check(count($d->onceTimers) === 1 && calls() === [], 'nach Ablauf der Sperre: wieder genau ein Update im Hintergrund');
+fireOnce($d);
+calls();
+$d->buffers = ['OpenUpdateAt' => (string) (time() + 3600)];
+$d->GetVisualizationTile();
+check(count($d->onceTimers) === 1, 'Sperre aus der Zukunft (Uhr zurückgestellt) gilt nicht: Update angestoßen');
+fireOnce($d);
+calls();
+$saved = $GLOBALS['calendarEvents'];
+$GLOBALS['calendarEvents'] = [];
+$f = tile($download); // der Abruf in ApplyChanges liefert nichts, etwa beim Kernelstart ohne Netz
+calls();
+$f->GetVisualizationTile();
+check(meta($f)['ok'] === false && count($f->onceTimers) === 1 && calls() === [], 'Stand ohne Termine (Abruf beim Start gescheitert): ebenso ein Update im Hintergrund');
+$GLOBALS['calendarEvents'] = $saved;
+fireOnce($f);
+check(calls() === ['DOWNLOAD_UpdateCalendar'] && meta($f)['ok'] === true, 'das Update holt die Termine nach');
 
 $events = calendar('EVENTS');
 $e = tile($events);
@@ -150,7 +187,7 @@ $n = tile($cal);
 check(meta($n)['ok'] === false, 'Kalendermodul ohne Termine (etwa noch ohne Cache nach dem Start): Puffer nicht als aktuell markiert');
 calls();
 $n->GetVisualizationTile();
-check(calls() === ['CACHED_GetCachedCalendar'], 'Öffnen baut dann neu, statt bis zum nächsten Update leer zu bleiben');
+check(calls() === ['CACHED_GetCachedCalendar'] && $n->onceTimers === [], 'Öffnen baut dann neu aus dem Cache, statt bis zum nächsten Update leer zu bleiben; kein Update im Hintergrund');
 $GLOBALS['calendarEvents'] = $saved;
 $x = tile($cal);
 $x->properties['CalendarID'] = 0;
@@ -158,10 +195,12 @@ $x->ApplyChanges();
 check(($x->buffers['LastData'] ?? '') === '' && ($x->buffers['LastMeta'] ?? '') === '', 'Kalenderinstanz entfernt: Puffer geleert');
 calls();
 $empty = json_decode((string) tileJson($x->GetVisualizationTile()), true);
-check(calls() === [] && $empty['allEvents'] === [] && $x->status === 201, 'die Kachel zeigt wie bisher den leeren Zustand');
+check(calls() === [] && $empty['allEvents'] === [] && $x->status === 201 && $x->onceTimers === [], 'die Kachel zeigt wie bisher den leeren Zustand, ohne Update im Hintergrund');
 $none = calendar('NONE');
 $u = tile($none);
-check($u->status === 202 && ($u->buffers['LastData'] ?? '') === '', 'Kalendermodul ohne passende Funktion: Status 202, Puffer leer');
+$u->GetVisualizationTile();
+check($u->status === 202 && ($u->buffers['LastData'] ?? '') === '' && $u->onceTimers === [], 'Kalendermodul ohne passende Funktion: Status 202, Puffer leer, kein Update im Hintergrund');
+check($m->onceTimers === [] && $e->onceTimers === [], 'Kalendermodule mit Cache oder _GetEvents: nie ein Update im Hintergrund');
 
 echo "== Große Zustände\n";
 $many = [];

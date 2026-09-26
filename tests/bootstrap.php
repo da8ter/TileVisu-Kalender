@@ -9,6 +9,8 @@ declare(strict_types=1);
  *   CACHED    _GetCachedCalendar (liest den Cache) und _UpdateCalendar (Neuabruf), wie ICCR
  *   DOWNLOAD  nur _UpdateCalendar (jeder Aufruf ist ein Neuabruf)
  *   EVENTS    nur _GetEvents($id, $from, $to) (~Calendar-Interface)
+ * RegisterOnceTimer merkt den Timer nur vor (Symcon führt ihn danach in einem eigenen Thread aus); fireOnce() spielt
+ * die vorgemerkten ab.
  * Aufruf aus dem Repository-Ordner: tests/run.sh
  */
 
@@ -17,7 +19,7 @@ const KR_READY = 10103, IPS_KERNELSTARTED = 10001, KL_ERROR = 10205, KL_WARNING 
 class IPSModuleStrict
 {
     public int $InstanceID;
-    public array $properties = [], $buffers = [], $timers = [], $updates = [], $logs = [], $debug = [], $references = [], $messages = [];
+    public array $properties = [], $buffers = [], $timers = [], $onceTimers = [], $updates = [], $logs = [], $debug = [], $references = [], $messages = [];
     public int $status = 0;
 
     public function __construct(int $InstanceID = 12345) { $this->InstanceID = $InstanceID; }
@@ -30,6 +32,7 @@ class IPSModuleStrict
     protected function ReadPropertyBoolean(string $k): bool { return $this->properties[$k]; }
     protected function RegisterTimer(string $name, int $ms, string $script): void { $this->timers[$name] = $ms; }
     protected function SetTimerInterval(string $name, int $ms): void { $this->timers[$name] = $ms; }
+    protected function RegisterOnceTimer(string $Ident, string $ScriptText): bool { $this->onceTimers[] = [$Ident, $ScriptText]; return true; }
     protected function SetVisualizationType(int $type): void {}
     protected function UpdateVisualizationValue(string $value): void { $this->updates[] = $value; }
     protected function GetBuffer(string $name): string { return $this->buffers[$name] ?? ''; }
@@ -74,6 +77,23 @@ function calendar(string $prefix): int
 function event(string $uid, int $from, int $to, string $name, array $extra = []): array
 {
     return $extra + ['UID' => $uid, 'Name' => $name, 'From' => $from, 'To' => $to, 'allDay' => false, 'Location' => '', 'Description' => '', 'Categories' => '', 'Status' => 'CONFIRMED'];
+}
+
+/**
+ * Führt die vorgemerkten Einmal-Timer aus, wie Symcon es nach dem laufenden Aufruf täte; nur Skripte der Form
+ * TVKAL_<Methode>($_IPS['TARGET']); sind bekannt. Liefert, wie viele liefen.
+ */
+function fireOnce(IPSModuleStrict $m): int
+{
+    $pending = $m->onceTimers;
+    $m->onceTimers = [];
+    foreach ($pending as [$ident, $script]) {
+        if (!preg_match('/^TVKAL_(\w+)\(\$_IPS\[\'TARGET\'\]\);$/', $script, $match) || !is_callable([$m, $match[1]])) {
+            throw new RuntimeException('Unbekanntes Skript im Einmal-Timer ' . $ident . ': ' . $script);
+        }
+        $m->{$match[1]}();
+    }
+    return count($pending);
 }
 
 /** Aufrufe eines Kalendermoduls seit dem letzten Zurücksetzen. */

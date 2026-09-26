@@ -12,18 +12,21 @@ const LAST_DATA_MAX_CHUNKS = 10;
 const LAST_DATA_GRACE = 60;
 // Termine im Debug-Auszug der Rohdaten
 const DEBUG_SAMPLE_EVENTS = 3;
+// Sperre für das Update im Hintergrund beim Öffnen, in Sekunden: mehrere Öffnungen hintereinander lösen einen Abruf aus
+const OPEN_UPDATE_LOCK = 300;
 
 /**
  * Zustand der Kachel beim Öffnen (GetVisualizationTile): der Puffer LastData samt Beschreibung LastMeta, wie lange ein
- * Stand gilt, und der Debug-Auszug der Rohdaten. Erwartet von der Klasse BuildPayload(bool): ?array,
- * BuildEmptyPayload(): array und die Eigenschaft UpdateInterval.
+ * Stand gilt, das Update im Hintergrund, wenn keiner da ist, und der Debug-Auszug der Rohdaten. Erwartet von der Klasse
+ * BuildPayload(bool): ?array, BuildEmptyPayload(): array, Update() (TVKAL_Update) und die Eigenschaft UpdateInterval.
  */
 trait TileStateBuffer
 {
     /**
      * Zustand für eine frisch geöffnete Kachel: der Puffer LastData, solange er aktuell genug ist (PayloadValidUntil),
-     * sonst neu aus dem Cache des Kalendermoduls. Einen Neuabruf (<Prefix>_UpdateCalendar) löst das Öffnen nie aus;
-     * bietet das Modul nur diesen, bleibt es beim letzten Stand, den der Timer geholt hat.
+     * sonst neu aus dem Cache des Kalendermoduls. Einen Neuabruf (<Prefix>_UpdateCalendar) macht das Öffnen nie selbst;
+     * bietet das Modul nur diesen, bleibt es beim letzten Stand, den der Timer geholt hat. Fehlt ein brauchbarer Stand
+     * (nach Reload oder Kernelstart, oder der Abruf lieferte keine Termine), stößt es ein Update im Hintergrund an.
      */
     private function TilePayloadJson(): string
     {
@@ -34,6 +37,9 @@ trait TileStateBuffer
         }
         $payload = $this->BuildPayload(false);
         if ($payload === null) {
+            if ($last === null || !$last['meta']['ok']) {
+                $this->RequestBackgroundUpdate(); // sonst bliebe die Kachel bis zum nächsten Timer leer
+            }
             return $last['json'] ?? $this->EncodePayload($this->BuildEmptyPayload());
         }
         $json = $this->EncodePayload($payload);
@@ -147,6 +153,25 @@ trait TileStateBuffer
             }
         }
         return $until;
+    }
+
+    /**
+     * Stößt einmalig ein Update im Hintergrund an (RegisterOnceTimer): das Öffnen wartet nicht auf den Neuabruf, das
+     * Update schickt den Stand danach an die offenen Kacheln. Der Zeitstempel im Puffer OpenUpdateAt sperrt weitere
+     * Auslösungen für OPEN_UPDATE_LOCK Sekunden. Bewusst kein SetTimerInterval: das zählte bei jedem Öffnen von vorn
+     * und ließe den Update-Timer verhungern.
+     */
+    private function RequestBackgroundUpdate(): void
+    {
+        $now = time();
+        $requested = (int) $this->GetBuffer('OpenUpdateAt');
+        if ($requested <= $now && $now - $requested < OPEN_UPDATE_LOCK) {
+            $this->SendDebug('TilePayload', sprintf('Update im Hintergrund schon angestoßen (vor %d s)', $now - $requested), 0);
+            return;
+        }
+        $this->SetBuffer('OpenUpdateAt', (string) $now);
+        $this->RegisterOnceTimer('OpenUpdate', 'TVKAL_Update($_IPS[\'TARGET\']);');
+        $this->SendDebug('TilePayload', 'Kein brauchbarer Stand: Update im Hintergrund angestoßen', 0);
     }
 
     /** Debug der Rohdaten: ein Auszug statt aller Termine (der volle Ausdruck kostete bei jedem Aufbau ein JSON aller Termine eines Jahres). */
