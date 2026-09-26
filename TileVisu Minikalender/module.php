@@ -2,20 +2,17 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/libs/TileStateBuffer.php';
+require_once __DIR__ . '/libs/EventFormatting.php';
+
 class TileVisuMinikalender extends IPSModuleStrict
 {
+    use \TVKAL\TileStateBuffer;
+    use \TVKAL\EventFormatting;
+
     private const STATUS_ACTIVE = 102;
     private const STATUS_NO_CALENDAR = 201;
     private const STATUS_UNSUPPORTED_CALENDAR = 202;
-
-    // Puffer LastData: JSON des zuletzt gebauten Zustands, ab LAST_DATA_CHUNK Bytes in Stücken LastData1, LastData2, …
-    // (Symcon warnt ab 256 kB je Puffer und kürzt über 512 kB); LastMeta beschreibt ihn.
-    private const LAST_DATA_CHUNK = 200000;
-    private const LAST_DATA_MAX_CHUNKS = 10;
-    // Spielraum des Update-Timers über das Intervall hinaus, in Sekunden
-    private const LAST_DATA_GRACE = 60;
-    // Termine im Debug-Auszug der Rohdaten
-    private const DEBUG_SAMPLE_EVENTS = 3;
 
     public function Create(): void
     {
@@ -113,29 +110,6 @@ class TileVisuMinikalender extends IPSModuleStrict
         return $module . $bootstrap;
     }
 
-    /**
-     * Zustand für eine frisch geöffnete Kachel: der Puffer LastData, solange er aktuell genug ist (PayloadValidUntil),
-     * sonst neu aus dem Cache des Kalendermoduls. Einen Neuabruf (<Prefix>_UpdateCalendar) löst das Öffnen nie aus;
-     * bietet das Modul nur diesen, bleibt es beim letzten Stand, den der Timer geholt hat.
-     */
-    private function TilePayloadJson(): string
-    {
-        $last = $this->ReadLastData();
-        $now = time();
-        if ($last !== null && $last['meta']['ok'] && $now >= $last['meta']['at'] && $now < $last['meta']['until']) {
-            return $last['json'];
-        }
-        $payload = $this->BuildPayload(false);
-        if ($payload === null) {
-            return $last['json'] ?? $this->EncodePayload($this->BuildEmptyPayload());
-        }
-        $json = $this->EncodePayload($payload);
-        if (!empty($payload['allEvents'])) {
-            $this->WriteLastData($json, $payload); // die nächsten Öffnungen brauchen den Cache nicht mehr
-        }
-        return $json;
-    }
-
     public function Update(): void
     {
         $start = microtime(true);
@@ -164,112 +138,6 @@ class TileVisuMinikalender extends IPSModuleStrict
             }
         }
         $this->UpdateVisualizationValue($this->EncodePayload($payload));
-    }
-
-    private function EncodePayload(array $payload): string
-    {
-        return (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-    }
-
-    /** Der Puffer LastData samt Beschreibung (LastMeta), wenn er vollständig ist, sonst null. */
-    private function ReadLastData(): ?array
-    {
-        $meta = json_decode($this->GetBuffer('LastMeta'), true);
-        foreach (['at', 'until', 'len', 'parts'] as $field) {
-            if (!is_array($meta) || !is_int($meta[$field] ?? null)) {
-                return null;
-            }
-        }
-        if (!is_bool($meta['ok'] ?? null) || $meta['parts'] < 1 || $meta['parts'] > self::LAST_DATA_MAX_CHUNKS) {
-            return null;
-        }
-        $json = $this->GetBuffer('LastData');
-        for ($i = 1; $i < $meta['parts']; $i++) {
-            $json .= $this->GetBuffer('LastData' . $i);
-        }
-        return strlen($json) === $meta['len'] ? ['json' => $json, 'meta' => $meta] : null;
-    }
-
-    /**
-     * Legt den Zustand in LastData ab (große in Stücken, getrennt nur an UTF-8-Zeichengrenzen: der Kernel hält Puffer
-     * als Text) und beschreibt ihn in LastMeta. 'ok' nur mit Terminen: einen leeren Stand (etwa ein Kalendermodul,
-     * das nach dem Start noch keinen Cache hat) baut das nächste Öffnen neu.
-     */
-    private function WriteLastData(string $json, array $payload): void
-    {
-        $chunks = [];
-        $length = strlen($json);
-        $offset = 0;
-        while ($offset < $length) {
-            $size = min(self::LAST_DATA_CHUNK, $length - $offset);
-            // höchstens drei Folgebytes zurück: das Stück endet vor dem Zeichen, in das es sonst schnitte
-            for ($back = 0; $back < 3 && $offset + $size < $length && (ord($json[$offset + $size]) & 0xC0) === 0x80; $back++) {
-                $size--;
-            }
-            $chunks[] = substr($json, $offset, $size);
-            $offset += $size;
-        }
-        if ($chunks === [] || count($chunks) > self::LAST_DATA_MAX_CHUNKS) {
-            $this->SendDebug('LastData', sprintf('Zustand nicht gepuffert (%d Bytes)', $length), 0);
-            $this->ClearLastData();
-            return;
-        }
-        $old = $this->ReadLastDataParts();
-        foreach ($chunks as $i => $chunk) {
-            $this->SetBuffer($i === 0 ? 'LastData' : 'LastData' . $i, $chunk);
-        }
-        for ($i = count($chunks); $i < $old; $i++) {
-            $this->SetBuffer('LastData' . $i, ''); // Stücke eines früheren, größeren Zustands
-        }
-        $this->SetBuffer('LastMeta', (string) json_encode([
-            'at'    => (int) ($payload['generatedAt'] ?? 0),
-            'until' => $this->PayloadValidUntil($payload),
-            'len'   => $length,
-            'parts' => count($chunks),
-            'ok'    => !empty($payload['allEvents'])
-        ]));
-    }
-
-    private function ClearLastData(): void
-    {
-        $parts = $this->ReadLastDataParts();
-        $this->SetBuffer('LastData', '');
-        for ($i = 1; $i < $parts; $i++) {
-            $this->SetBuffer('LastData' . $i, '');
-        }
-        $this->SetBuffer('LastMeta', '');
-    }
-
-    /** Anzahl der Stücke laut LastMeta (1, wenn er fehlt). */
-    private function ReadLastDataParts(): int
-    {
-        $meta = json_decode($this->GetBuffer('LastMeta'), true);
-        return is_array($meta) && is_int($meta['parts'] ?? null) ? max(1, min($meta['parts'], self::LAST_DATA_MAX_CHUNKS)) : 1;
-    }
-
-    /**
-     * Bis wann der Zustand stimmt: bis ein Termin der Tagesliste beginnt oder endet (Hervorhebung „läuft“), bis zum
-     * Tageswechsel (Heute/Morgen, Tagesliste) und höchstens ein Aktualisierungsintervall lang – so alt ist der Stand
-     * einer schon offenen Kachel auch. Termine, die das Kalendermodul seitdem neu hat, zeigt das nächste Update.
-     */
-    private function PayloadValidUntil(array $payload): int
-    {
-        $at = (int) ($payload['generatedAt'] ?? 0);
-        $until = min($at + max(1, $this->ReadPropertyInteger('UpdateInterval')) * 60 + self::LAST_DATA_GRACE, (int) strtotime('tomorrow', $at));
-        foreach ($payload['days'] ?? [] as $day) {
-            foreach ($day['events'] ?? [] as $e) {
-                $from = (int) ($e['from'] ?? 0);
-                $to = (int) ($e['to'] ?? 0);
-                if (!empty($e['running'])) {
-                    $until = min($until, $to);
-                } elseif ($from > $at) {
-                    $until = min($until, $from);
-                } elseif ($to > $at) {
-                    $until = min($until, $at); // läuft schon, war beim Bauen aber noch nicht markiert
-                }
-            }
-        }
-        return $until;
     }
 
     private function BuildEmptyPayload(): array
@@ -379,11 +247,7 @@ class TileVisuMinikalender extends IPSModuleStrict
             return $this->BuildEmptyPayload();
         }
         $this->SendDebug('FetchEvents', sprintf('%d Termine vom Kalendermodul erhalten', count($events)), 0);
-        if (count($events) > 0) {
-            // Auszug statt aller Termine: der volle Ausdruck kostete bei jedem Aufbau ein JSON aller Termine eines Jahres
-            $sample = array_slice($events, 0, self::DEBUG_SAMPLE_EVENTS, true);
-            $this->SendDebug('FetchEvents', sprintf('Rohdaten (%d von %d): ', count($sample), count($events)) . json_encode($sample, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 0);
-        }
+        $this->DebugRawEvents($events);
 
         $labels = $this->GetFrontendLabels();
 
@@ -409,77 +273,6 @@ class TileVisuMinikalender extends IPSModuleStrict
             'config'      => $this->GetFrontendConfig(),
             'labels'      => $labels
         ];
-    }
-
-    private function BuildAllEvents(array $events, array $labels): array
-    {
-        $out = [];
-        foreach ($events as $e) {
-            if (!is_array($e)) {
-                continue;
-            }
-            $evFrom = (int) ($e['From'] ?? 0);
-            $evTo   = (int) ($e['To'] ?? 0);
-            if ($evFrom === 0 || $evTo === 0) {
-                continue;
-            }
-            $allDay = !empty($e['allDay']);
-            $out[] = [
-                'uid'         => (string) ($e['UID'] ?? ''),
-                'title'       => $this->CleanInline((string) ($e['Name'] ?? '')),
-                'from'        => $evFrom,
-                'to'          => $evTo,
-                'allDay'      => $allDay,
-                'timeLabel'   => $allDay ? $labels['allDay'] : date('H:i', $evFrom) . ' – ' . date('H:i', $evTo),
-                'location'    => $this->CleanInline((string) ($e['Location'] ?? '')),
-                'description' => $this->CleanMulti((string) ($e['Description'] ?? '')),
-                'categories'  => $this->CleanInline((string) ($e['Categories'] ?? '')),
-                'status'      => (string) ($e['Status'] ?? '')
-            ];
-        }
-        return $out;
-    }
-
-    /**
-     * Bereinigt einzeilige Texte (Titel, Location, Kategorien):
-     * - löst iCal-Escape-Sequenzen auf (\n, \r, \,, \;, \\)
-     * - ersetzt Zeilenumbrüche/Tabs durch ", "
-     * - normalisiert Whitespace und Mehrfach-Kommas
-     */
-    private function CleanInline(string $s): string
-    {
-        if ($s === '') {
-            return '';
-        }
-        $s = str_replace(
-            ['\\n', '\\N', '\\r', '\\R', '\\,', '\\;', '\\\\'],
-            ["\n", "\n", "\r", "\r", ',', ';', '\\'],
-            $s
-        );
-        // preg_replace liefert bei kaputtem UTF-8 aus externen Kalendern null — dann Rohwert behalten
-        $s = preg_replace('/[\r\n\t]+/', ', ', $s) ?? $s;
-        $s = preg_replace('/\s+/', ' ', $s) ?? $s;
-        $s = preg_replace('/(\s*,\s*)+/', ', ', $s) ?? $s;
-        return trim($s, ' ,');
-    }
-
-    /**
-     * Bereinigt mehrzeilige Texte (Beschreibung): iCal-Escapes auflösen,
-     * echte Zeilenumbrüche behalten, aber Whitespace innerhalb der Zeile normalisieren.
-     */
-    private function CleanMulti(string $s): string
-    {
-        if ($s === '') {
-            return '';
-        }
-        $s = str_replace(
-            ['\\n', '\\N', '\\r', '\\R', '\\,', '\\;', '\\\\'],
-            ["\n", "\n", "\n", "\n", ',', ';', '\\'],
-            $s
-        );
-        $s = str_replace(["\r\n", "\r"], "\n", $s);
-        $s = preg_replace('/[ \t]+/', ' ', $s) ?? $s;
-        return trim($s);
     }
 
     /**
@@ -559,101 +352,5 @@ class TileVisuMinikalender extends IPSModuleStrict
             return null;
         }
         return $events;
-    }
-
-    private function GroupEventsByDay(array $events, int $from, int $daysAhead, array $labels): array
-    {
-        $now         = time();
-        $weekdayLong = $labels['weekdaysLong'];
-        $days        = [];
-
-        for ($i = 0; $i < $daysAhead; $i++) {
-            // Kalendertage statt +86400: an DST-Tagen (23/25h) würden sonst alle
-            // Tagesgrenzen um eine Stunde driften (doppelte/übersprungene Tage).
-            $dayStart = (int) strtotime(sprintf('+%d day', $i), $from);
-            $dayEnd   = (int) strtotime('+1 day', $dayStart);
-            $dateKey  = date('Y-m-d', $dayStart);
-
-            $label = match ($i) {
-                0       => $labels['today'],
-                1       => $labels['tomorrow'],
-                default => $weekdayLong[(int) date('w', $dayStart)]
-            };
-
-            $dayEvents = [];
-            foreach ($events as $e) {
-                if (!is_array($e)) {
-                    continue;
-                }
-                $evFrom = (int) ($e['From'] ?? 0);
-                $evTo   = (int) ($e['To'] ?? 0);
-                if ($evFrom === 0 || $evTo === 0) {
-                    continue;
-                }
-                if ($evTo <= $dayStart || $evFrom >= $dayEnd) {
-                    continue;
-                }
-
-                $allDay = !empty($e['allDay']);
-                $dayEvents[] = [
-                    'uid'         => (string) ($e['UID'] ?? ''),
-                    'title'       => $this->CleanInline((string) ($e['Name'] ?? '')),
-                    'timeLabel'   => $allDay ? $labels['allDay'] : $this->FormatTimeRange($evFrom, $evTo, $dayStart, $dayEnd),
-                    'allDay'      => $allDay,
-                    'from'        => $evFrom,
-                    'to'          => $evTo,
-                    'location'    => $this->CleanInline((string) ($e['Location'] ?? '')),
-                    'description' => $this->CleanMulti((string) ($e['Description'] ?? '')),
-                    'categories'  => $this->CleanInline((string) ($e['Categories'] ?? '')),
-                    'status'      => (string) ($e['Status'] ?? ''),
-                    'running'     => ($now >= $evFrom && $now < $evTo)
-                ];
-            }
-
-            usort($dayEvents, static function (array $a, array $b): int {
-                if ($a['allDay'] !== $b['allDay']) {
-                    return $a['allDay'] ? -1 : 1;
-                }
-                return $a['from'] <=> $b['from'];
-            });
-
-            $days[] = [
-                'date'      => $dateKey,
-                'label'     => $label,
-                'dateShort' => date('d.m.', $dayStart),
-                'events'    => $dayEvents
-            ];
-        }
-
-        return $days;
-    }
-
-    private function FormatTimeRange(int $evFrom, int $evTo, int $dayStart, int $dayEnd): string
-    {
-        $startsBefore = $evFrom < $dayStart;
-        $endsAfter    = $evTo > $dayEnd;
-
-        $start = $startsBefore ? '00:00' : date('H:i', $evFrom);
-        $end   = $endsAfter ? '24:00' : date('H:i', $evTo);
-
-        return $start . ' – ' . $end;
-    }
-
-    private function LimitEvents(array $days, int $max): array
-    {
-        $count = 0;
-        $out   = [];
-        foreach ($days as $day) {
-            if ($count >= $max) {
-                break;
-            }
-            $remaining = $max - $count;
-            if (count($day['events']) > $remaining) {
-                $day['events'] = array_slice($day['events'], 0, $remaining);
-            }
-            $count += count($day['events']);
-            $out[] = $day;
-        }
-        return $out;
     }
 }
