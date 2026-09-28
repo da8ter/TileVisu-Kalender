@@ -259,6 +259,9 @@
         flex-direction: column;
         gap: calc(var(--gap) / 4);
         overflow: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
         scrollbar-width: thin;
         scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent;
         padding-top: 4px;
@@ -333,6 +336,9 @@
         flex: 1 1 auto;
         min-height: 0;
         overflow: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
         padding: var(--gap);
         scrollbar-width: thin;
         scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent;
@@ -443,6 +449,111 @@
         let lastSeenLocalDate = null;
         let activeView = 'list';
         const monthState = { year: null, month: null, selectedDate: null };
+
+        // ── Scroll-Containment für iOS/Symcon WebView ───────────────────
+        function bindScrollContainment(scrollEl) {
+            if (!scrollEl || scrollEl.dataset.scrollContainmentBound === '1') {
+                return;
+            }
+            scrollEl.dataset.scrollContainmentBound = '1';
+
+            let lastTouchY = null;
+
+            scrollEl.addEventListener('wheel', (e) => {
+                const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+                if (maxScrollTop <= 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                const deltaY = e.deltaY || 0;
+                if (deltaY === 0) {
+                    e.stopPropagation();
+                    return;
+                }
+
+                const atTop = scrollEl.scrollTop <= 0;
+                const atBottom = scrollEl.scrollTop >= maxScrollTop - 1;
+                const scrollingUp = deltaY < 0;
+                const scrollingDown = deltaY > 0;
+
+                if ((scrollingUp && atTop) || (scrollingDown && atBottom)) {
+                    e.preventDefault();
+                }
+                e.stopPropagation();
+            }, { passive: false });
+
+            scrollEl.addEventListener('touchstart', (e) => {
+                if (!e.touches || e.touches.length !== 1) {
+                    lastTouchY = null;
+                    return;
+                }
+                lastTouchY = e.touches[0].clientY;
+                e.stopPropagation();
+            }, { passive: true });
+
+            scrollEl.addEventListener('touchmove', (e) => {
+                if (!e.touches || e.touches.length !== 1) {
+                    return;
+                }
+
+                const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+                if (maxScrollTop <= 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                const currentY = e.touches[0].clientY;
+                if (lastTouchY === null) {
+                    lastTouchY = currentY;
+                    e.stopPropagation();
+                    return;
+                }
+
+                const deltaY = lastTouchY - currentY;
+                const atTop = scrollEl.scrollTop <= 0;
+                const atBottom = scrollEl.scrollTop >= maxScrollTop - 1;
+                const swipingDown = deltaY < 0;
+                const swipingUp = deltaY > 0;
+
+                if ((swipingDown && atTop) || (swipingUp && atBottom)) {
+                    e.preventDefault();
+                }
+
+                e.stopPropagation();
+                lastTouchY = currentY;
+            }, { passive: false });
+
+            scrollEl.addEventListener('touchend', () => {
+                lastTouchY = null;
+            }, { passive: true });
+
+            scrollEl.addEventListener('touchcancel', () => {
+                lastTouchY = null;
+            }, { passive: true });
+        }
+
+        bindScrollContainment(listEl);
+        bindScrollContainment(dayEventsEl);
+
+        const allowedScrollAreaSelector = '#tvkal-list, #tvkal-day-events, .tvkal__overlay-body';
+        function isInsideAllowedScrollArea(target) {
+            return target instanceof Element && target.closest(allowedScrollAreaSelector) !== null;
+        }
+
+        document.addEventListener('wheel', (e) => {
+            if (!isInsideAllowedScrollArea(e.target)) {
+                e.preventDefault();
+            }
+        }, { passive: false, capture: true });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!isInsideAllowedScrollArea(e.target)) {
+                e.preventDefault();
+            }
+        }, { passive: false, capture: true });
 
         function localIsoToday() {
             const d = new Date();
@@ -818,6 +929,7 @@
                     '</div>' +
                 '</div>';
             overlay.classList.add('open');
+            bindScrollContainment(overlay.querySelector('.tvkal__overlay-body'));
             overlay.querySelector('[data-action="close"]').addEventListener('click', closeOverlay);
             overlay.addEventListener('click', onOverlayClick);
             document.addEventListener('keydown', onKey);
