@@ -30,4 +30,4 @@ tests/run.sh                  # php -l aller PHP-Dateien, JSON-Prüfung, dann te
 
 ## Wissen
 
-Gemeinsames Symcon-Plattformwissen (Puffergrenzen, Timer, Kachel-Nachrichten): https://github.com/da8ter/SymDo-Family-Organizer/tree/SymDo-Beta/docs/plattform – lokal `../List/docs/plattform/`. Symcon-Fragen am offiziellen Handbuch prüfen.
+Gemeinsames Symcon-Plattformwissen (Puffergrenzen, Timer, Kachel-Nachrichten): https://github.com/da8ter/SymDo-Family-Organizer/tree/SymDo-Beta/.claude/docs/plattform – lokal `../List/.claude/docs/plattform/`. Symcon-Fragen am offiziellen Handbuch prüfen.
