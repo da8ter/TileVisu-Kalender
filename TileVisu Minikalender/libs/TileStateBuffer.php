@@ -51,7 +51,10 @@ trait TileStateBuffer
 
     private function EncodePayload(array $payload): string
     {
-        return (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        // JSON_HEX_TAG/AMP: Termintexte kommen aus fremden Kalendern. Ein „</script>“ darin
+        // beendete sonst den Inline-Block der Kachel (GetVisualizationTile) und liefe als HTML.
+        return (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            | JSON_HEX_TAG | JSON_HEX_AMP);
     }
 
     /** Der Puffer LastData samt Beschreibung (LastMeta), wenn er vollständig ist, sonst null. */

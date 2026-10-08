@@ -106,7 +106,10 @@ class TileVisuMinikalender extends IPSModuleStrict
             $this->LogMessage('module.html could not be loaded', KL_ERROR);
             return '';
         }
-        $bootstrap = '<script>(()=>{const data=' . $this->TilePayloadJson() . ';if(typeof handleMessage==="function"){handleMessage(data);}else{window.__tvkalInitialData=data;}})();</script>';
+        // Auch ein Puffer aus einem älteren Modulstand (ohne JSON_HEX_TAG) darf den Block nicht
+        // beenden: < > & kommen in JSON nur innerhalb von Zeichenketten vor, die Umschrift ist verlustfrei.
+        $daten = str_replace(['<', '>', '&'], ['\u003c', '\u003e', '\u0026'], $this->TilePayloadJson());
+        $bootstrap = '<script>(()=>{const data=' . $daten . ';if(typeof handleMessage==="function"){handleMessage(data);}else{window.__tvkalInitialData=data;}})();</script>';
         return $module . $bootstrap;
     }
 

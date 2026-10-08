@@ -243,4 +243,18 @@ priv($b, 'WriteLastData', str_repeat('x', 200000 * 10 + 1), ['generatedAt' => ti
 check(($b->buffers['LastData'] ?? '') === '' && ($b->buffers['LastMeta'] ?? '') === '' && str_contains((string) ($b->debug[0][1] ?? ''), 'nicht gepuffert'),
     'Zustand über zehn Stücke: nicht gepuffert, Hinweis im Debug');
 
+// Sicherheit: Termintexte aus fremden Kalendern dürfen den Inline-Block nicht beenden
+$x = tile(4711);
+$x->ApplyChanges();
+$boese = '</script><img src=x onerror=alert(1)>';
+priv($x, 'WriteLastData', priv($x, 'EncodePayload', ['generatedAt' => time(), 'days' => [], 'allEvents' => [['title' => $boese]]]),
+    ['generatedAt' => time(), 'days' => [], 'allEvents' => [1]]);
+$html = $x->GetVisualizationTile();
+$block = substr($html, strrpos($html, '<script>(()=>{const data='));
+check(!str_contains($html, '</script><img') && substr_count($block, '</script>') === 1, 'Termintext mit </script>: bleibt im Inline-Block (JSON_HEX_TAG)');
+check(json_decode(tileJson($html), true)['allEvents'][0]['title'] === $boese, 'der Text kommt in der Kachel unverändert an');
+$alt = '{"generatedAt":' . time() . ',"days":[],"allEvents":[{"title":"' . $boese . '"}]}';
+priv($x, 'WriteLastData', $alt, ['generatedAt' => time(), 'days' => [], 'allEvents' => [1]]);
+check(!str_contains($x->GetVisualizationTile(), '</script><img'), 'auch ein Puffer aus einem älteren Modulstand (ohne Maskierung) beendet den Block nicht');
+
 echo "\nAlle {$GLOBALS['checks']} Prüfungen bestanden.\n";
